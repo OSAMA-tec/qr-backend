@@ -533,6 +533,172 @@ const popupPreviewValidation = [
   handleValidationErrors
 ];
 
+// Voucher creation validation rules 🎟️
+const voucherCreationValidation = [
+  body('title')
+    .trim()
+    .notEmpty()
+    .withMessage('Voucher title is required 📝')
+    .isLength({ min: 3, max: 100 })
+    .withMessage('Title must be between 3 and 100 characters'),
+  
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Description cannot exceed 500 characters'),
+  
+  body('discountType')
+    .isIn(['percentage', 'fixed'])
+    .withMessage('Invalid discount type 🏷️'),
+  
+  body('discountValue')
+    .isFloat({ min: 0 })
+    .withMessage('Discount value must be a positive number 💰')
+    .custom((value, { req }) => {
+      if (req.body.discountType === 'percentage' && value > 100) {
+        throw new Error('Percentage discount cannot exceed 100% 📊');
+      }
+      return true;
+    }),
+  
+  body('startDate')
+    .isISO8601()
+    .withMessage('Invalid start date format 📅')
+    .custom((value) => {
+      if (new Date(value) < new Date()) {
+        throw new Error('Start date cannot be in the past ⏰');
+      }
+      return true;
+    }),
+  
+  body('endDate')
+    .isISO8601()
+    .withMessage('Invalid end date format 📅')
+    .custom((value, { req }) => {
+      if (new Date(value) <= new Date(req.body.startDate)) {
+        throw new Error('End date must be after start date ⏰');
+      }
+      return true;
+    }),
+  
+  body('usageLimit.perCoupon')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Usage limit per coupon must be at least 1 🎯'),
+  
+  body('usageLimit.perCustomer')
+    .optional()
+    .isInt({ min: 1 })
+    .withMessage('Usage limit per customer must be at least 1 👤'),
+  
+  body('minimumPurchase')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Minimum purchase amount must be a positive number 💰'),
+  
+  body('maximumDiscount')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Maximum discount must be a positive number 💰'),
+  
+  handleValidationErrors
+];
+
+// Voucher update validation rules ✏️
+const voucherUpdateValidation = [
+  body('title')
+    .optional()
+    .trim()
+    .isLength({ min: 3, max: 100 })
+    .withMessage('Title must be between 3 and 100 characters'),
+  
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Description cannot exceed 500 characters'),
+  
+  body('startDate')
+    .optional()
+    .isISO8601()
+    .withMessage('Invalid start date format 📅'),
+  
+  body('endDate')
+    .optional()
+    .isISO8601()
+    .withMessage('Invalid end date format 📅')
+    .custom((value, { req }) => {
+      if (req.body.startDate && new Date(value) <= new Date(req.body.startDate)) {
+        throw new Error('End date must be after start date ⏰');
+      }
+      return true;
+    }),
+  
+  body('minimumPurchase')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Minimum purchase amount must be a positive number 💰'),
+  
+  body('maximumDiscount')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Maximum discount must be a positive number 💰'),
+  
+  handleValidationErrors
+];
+
+// Voucher validation rules 🔍
+const voucherValidationRules = [
+  body('code')
+    .trim()
+    .notEmpty()
+    .withMessage('Voucher code is required 🎫'),
+  
+  body('businessId')
+    .isMongoId()
+    .withMessage('Invalid business ID format 🏢'),
+  
+  body('customerId')
+    .optional()
+    .isMongoId()
+    .withMessage('Invalid customer ID format 👤'),
+  
+  handleValidationErrors
+];
+
+// Voucher redemption validation rules 💫
+const voucherRedemptionValidation = [
+  body('voucherId')
+    .isMongoId()
+    .withMessage('Invalid voucher ID format 🎫'),
+  
+  body('customerId')
+    .isMongoId()
+    .withMessage('Invalid customer ID format 👤'),
+  
+  body('amount')
+    .isFloat({ min: 0 })
+    .withMessage('Amount must be a positive number 💰'),
+  
+  body('location')
+    .optional()
+    .isObject()
+    .withMessage('Location must be an object 📍'),
+  
+  body('location.latitude')
+    .optional()
+    .isFloat({ min: -90, max: 90 })
+    .withMessage('Invalid latitude value 🌍'),
+  
+  body('location.longitude')
+    .optional()
+    .isFloat({ min: -180, max: 180 })
+    .withMessage('Invalid longitude value 🌍'),
+  
+  handleValidationErrors
+];
+
 module.exports = {
   registerValidation,
   loginValidation,
@@ -547,5 +713,9 @@ module.exports = {
   widgetCustomizationValidation,
   voucherClaimValidation,
   popupSettingsValidation,
-  popupPreviewValidation
+  popupPreviewValidation,
+  voucherCreationValidation,
+  voucherUpdateValidation,
+  voucherValidationRules,
+  voucherRedemptionValidation
 }; 

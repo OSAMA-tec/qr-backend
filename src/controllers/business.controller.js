@@ -1,7 +1,7 @@
 // Import dependencies 📦
 const User = require('../models/user.model');
 const Transaction = require('../models/transaction.model');
-const Subscription = require('../models/subscription.model');
+const { Subscription } = require('../models/subscription.model');
 
 // Get business profile 🏢
 const getBusinessProfile = async (req, res) => {
@@ -22,15 +22,15 @@ const getBusinessProfile = async (req, res) => {
 
     // Get subscription status
     const subscription = await Subscription.findOne({ 
-      userId,
+      businessId: userId,
       status: 'active'
-    }).select('plan status validUntil');
+    }).select('plan status billing.currentPeriodEnd');
 
     res.json({
       success: true,
       data: {
         ...business.toJSON(),
-        subscription
+        subscription: subscription || null
       }
     });
   } catch (error) {

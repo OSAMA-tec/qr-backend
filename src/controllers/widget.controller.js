@@ -13,7 +13,6 @@ const getWidgetConfig = async (req, res) => {
       role: 'business',
       isVerified: true 
     }).select('businessProfile');
-
     if (!business) {
       return res.status(404).json({
         success: false,
@@ -27,21 +26,25 @@ const getWidgetConfig = async (req, res) => {
       isActive: true,
       startDate: { $lte: new Date() },
       endDate: { $gte: new Date() }
-    }).select('title description discount type maxRedemptions currentRedemptions');
+    }).select('title description discountType discountValue');
+
+    // Safely get business profile data with defaults
+    const businessProfile = business.businessProfile || {};
+    const widgetSettings = businessProfile.widgetSettings || {};
 
     res.json({
       success: true,
       data: {
         business: {
-          name: business.businessProfile.businessName,
-          logo: business.businessProfile.logo,
-          theme: business.businessProfile.widgetTheme || 'light'
+          name: businessProfile.businessName || 'Business Name',
+          logo: businessProfile.logo || null,
+          theme: businessProfile.widgetTheme || 'light'
         },
         activeCoupons,
-        displaySettings: business.businessProfile.widgetSettings || {
-          position: 'bottom-right',
-          timing: 'immediate',
-          animation: 'slide'
+        displaySettings: {
+          position: widgetSettings.position || 'bottom-right',
+          timing: widgetSettings.timing || 'immediate',
+          animation: widgetSettings.animation || 'slide'
         }
       }
     });

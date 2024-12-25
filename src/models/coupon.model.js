@@ -115,7 +115,6 @@ const couponSchema = new mongoose.Schema({
 
 // Indexes 📇
 couponSchema.index({ 'targetAudience.location': '2dsphere' });
-couponSchema.index({ code: 1 });
 couponSchema.index({ businessId: 1 });
 couponSchema.index({ 'marketplace.isPublic': 1, 'marketplace.category': 1 });
 
