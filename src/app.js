@@ -13,6 +13,7 @@ const popupRoutes = require('./routes/popup.routes');
 const userRoutes = require('./routes/user.routes');
 const widgetRoutes = require('./routes/widget.routes');
 const voucherRoutes = require('./routes/voucher.routes');
+const qrCodeRoutes = require('./routes/qrCode.routes');
 const { cookieParser, handleCSRFError } = require('./middleware/csrf.middleware');
 
 // Initialize express app 🚀
@@ -36,6 +37,7 @@ app.use('/api/popup', popupRoutes);
 app.use('/api/user', userRoutes);
 app.use('/api/widget', widgetRoutes);
 app.use('/api/vouchers', voucherRoutes);
+app.use('/api/qr-codes', qrCodeRoutes);
 
 app.get('/', (req, res) => {
   res.json({ message: 'Welcome to our API! 🎉' });

@@ -699,6 +699,83 @@ const voucherRedemptionValidation = [
   handleValidationErrors
 ];
 
+// QR code generation validation rules 🎨
+const qrCodeGenerationValidation = [
+  body('voucherId')
+    .isMongoId()
+    .withMessage('Invalid voucher ID format 🎫'),
+  
+  body('metadata')
+    .optional()
+    .isObject()
+    .withMessage('Metadata must be an object 📝'),
+  
+  handleValidationErrors
+];
+
+// Bulk QR code generation validation rules 🎯
+const bulkQRCodeGenerationValidation = [
+  body('voucherId')
+    .isMongoId()
+    .withMessage('Invalid voucher ID format 🎫'),
+  
+  body('quantity')
+    .isInt({ min: 1, max: 1000 })
+    .withMessage('Quantity must be between 1 and 1000 🔢'),
+  
+  body('metadata')
+    .optional()
+    .isObject()
+    .withMessage('Metadata must be an object 📝'),
+  
+  handleValidationErrors
+];
+
+// QR code scan validation rules 📱
+const qrCodeScanValidation = [
+  body('code')
+    .trim()
+    .notEmpty()
+    .withMessage('QR code is required 🎫'),
+  
+  body('location')
+    .optional()
+    .isObject()
+    .withMessage('Location must be an object 📍'),
+  
+  body('location.latitude')
+    .optional()
+    .isFloat({ min: -90, max: 90 })
+    .withMessage('Invalid latitude value 🌍'),
+  
+  body('location.longitude')
+    .optional()
+    .isFloat({ min: -180, max: 180 })
+    .withMessage('Invalid longitude value 🌍'),
+  
+  body('deviceInfo')
+    .optional()
+    .isObject()
+    .withMessage('Device info must be an object 📱'),
+  
+  body('deviceInfo.type')
+    .optional()
+    .isIn(['ios', 'android', 'web'])
+    .withMessage('Invalid device type'),
+  
+  body('deviceInfo.model')
+    .optional()
+    .isString()
+    .withMessage('Device model must be a string'),
+  
+  body('deviceInfo.os')
+    .optional()
+    .isString()
+    .withMessage('Operating system must be a string'),
+  
+  handleValidationErrors
+];
+
 module.exports = {
   registerValidation,
   loginValidation,
@@ -717,5 +794,8 @@ module.exports = {
   voucherCreationValidation,
   voucherUpdateValidation,
   voucherValidationRules,
-  voucherRedemptionValidation
+  voucherRedemptionValidation,
+  qrCodeGenerationValidation,
+  bulkQRCodeGenerationValidation,
+  qrCodeScanValidation
 }; 
