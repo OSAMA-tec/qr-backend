@@ -345,6 +345,81 @@ const businessRegistrationValidation = [
   handleValidationErrors
 ];
 
+// Widget customization validation rules 🎨
+const widgetCustomizationValidation = [
+  body('theme')
+    .optional()
+    .isIn(['light', 'dark', 'custom'])
+    .withMessage('Invalid theme selection'),
+  body('position')
+    .optional()
+    .isIn(['top-left', 'top-right', 'bottom-left', 'bottom-right'])
+    .withMessage('Invalid position selection'),
+  body('timing')
+    .optional()
+    .isIn(['immediate', 'delay', 'scroll', 'exit-intent'])
+    .withMessage('Invalid timing selection'),
+  body('animation')
+    .optional()
+    .isIn(['fade', 'slide', 'bounce'])
+    .withMessage('Invalid animation selection'),
+  body('customColors')
+    .optional()
+    .isObject()
+    .withMessage('Custom colors must be an object'),
+  body('customColors.primary')
+    .optional()
+    .matches(/^#[0-9A-Fa-f]{6}$/)
+    .withMessage('Invalid primary color format'),
+  body('customColors.secondary')
+    .optional()
+    .matches(/^#[0-9A-Fa-f]{6}$/)
+    .withMessage('Invalid secondary color format'),
+  body('displayRules')
+    .optional()
+    .isObject()
+    .withMessage('Display rules must be an object'),
+  body('displayRules.delay')
+    .optional()
+    .isInt({ min: 0, max: 60000 })
+    .withMessage('Delay must be between 0 and 60000 milliseconds'),
+  body('displayRules.scrollPercentage')
+    .optional()
+    .isInt({ min: 0, max: 100 })
+    .withMessage('Scroll percentage must be between 0 and 100'),
+  handleValidationErrors
+];
+
+// Voucher claim validation rules 🎟️
+const voucherClaimValidation = [
+  body('businessId')
+    .notEmpty()
+    .withMessage('Business ID is required')
+    .isMongoId()
+    .withMessage('Invalid business ID format'),
+  body('couponId')
+    .notEmpty()
+    .withMessage('Coupon ID is required')
+    .isMongoId()
+    .withMessage('Invalid coupon ID format'),
+  body('customerEmail')
+    .trim()
+    .isEmail()
+    .withMessage('Please enter a valid email address 📧')
+    .normalizeEmail(),
+  body('customerName')
+    .trim()
+    .notEmpty()
+    .withMessage('Customer name is required')
+    .matches(/^[a-zA-Z]+(?: [a-zA-Z]+)*$/)
+    .withMessage('Invalid customer name format'),
+  body('phoneNumber')
+    .optional()
+    .matches(/^\+?[\d\s-]+$/)
+    .withMessage('Invalid phone number format 📱'),
+  handleValidationErrors
+];
+
 module.exports = {
   registerValidation,
   loginValidation,
@@ -355,5 +430,7 @@ module.exports = {
   gdprConsentValidation,
   businessProfileValidation,
   staffMemberValidation,
-  businessRegistrationValidation
+  businessRegistrationValidation,
+  widgetCustomizationValidation,
+  voucherClaimValidation
 }; 
