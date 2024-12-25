@@ -7,6 +7,122 @@ const crypto = require('crypto');
 // Helper function to generate verification token 🎟️
 const generateVerificationToken = () => crypto.randomBytes(32).toString('hex');
 
+// Verification success HTML template 📄
+const getVerificationSuccessHtml = () => `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Email Verification Success</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            text-align: center;
+            padding: 40px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .success-icon {
+            color: #4CAF50;
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+        .title {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .message {
+            color: #666;
+            margin-bottom: 25px;
+        }
+        .login-button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            text-decoration: none;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="success-icon">✅</div>
+        <h1 class="title">Email Verified Successfully!</h1>
+        <p class="message">Your email has been verified. You can now login to your account.</p>
+        <a href="${process.env.CLIENT_URL}/login" class="login-button">Go to Login</a>
+    </div>
+</body>
+</html>
+`;
+
+// Verification error HTML template 📄
+const getVerificationErrorHtml = (message) => `
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Email Verification Failed</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f5f5f5;
+        }
+        .container {
+            text-align: center;
+            padding: 40px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+        }
+        .error-icon {
+            color: #f44336;
+            font-size: 48px;
+            margin-bottom: 20px;
+        }
+        .title {
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .message {
+            color: #666;
+            margin-bottom: 25px;
+        }
+        .retry-button {
+            background-color: #f44336;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 5px;
+            text-decoration: none;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="error-icon">❌</div>
+        <h1 class="title">Verification Failed</h1>
+        <p class="message">${message}</p>
+        <a href="${process.env.CLIENT_URL}/register" class="retry-button">Back to Registration</a>
+    </div>
+</body>
+</html>
+`;
+
 // Register controller 📝
 const register = async (req, res) => {
   try {
@@ -228,6 +344,10 @@ const verifyEmail = async (req, res) => {
     // Find user with verification token
     const user = await User.findOne({ verificationToken: token });
     if (!user) {
+      // Return HTML error page for GET request
+      if (req.method === 'GET') {
+        return res.send(getVerificationErrorHtml('Invalid or expired verification link.'));
+      }
       return res.status(400).json({
         success: false,
         message: 'Invalid verification token! 🚫'
@@ -239,12 +359,23 @@ const verifyEmail = async (req, res) => {
     user.verificationToken = undefined;
     await user.save();
 
+    // Return HTML success page for GET request
+    if (req.method === 'GET') {
+      return res.send(getVerificationSuccessHtml());
+    }
+
     res.json({
       success: true,
       message: 'Email verified successfully! You can now login 🎉'
     });
   } catch (error) {
     console.error('Email verification error:', error);
+    
+    // Return HTML error page for GET request
+    if (req.method === 'GET') {
+      return res.send(getVerificationErrorHtml('Verification failed. Please try again.'));
+    }
+
     res.status(500).json({
       success: false,
       message: 'Email verification failed! Please try again later 😢'

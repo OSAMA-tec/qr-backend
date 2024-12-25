@@ -26,7 +26,10 @@ router.post('/login', loginValidation, login);
 router.post('/refresh-token', refreshToken);
 router.post('/forgot-password', forgotPasswordValidation, forgotPassword);
 router.post('/reset-password', resetPasswordValidation, resetPassword);
-router.get('/verify-email/:token', verifyEmail);
+
+// Email verification routes (both GET and POST supported)
+router.get('/verify-email/:token', verifyEmail);  // For email link clicks
+router.post('/verify-email/:token', verifyEmail); // For API calls
 
 // Protected routes 🔒
 router.post('/logout', csrfProtection, authMiddleware, logout);
