@@ -77,10 +77,11 @@ const userSchema = new mongoose.Schema({
 });
 
 // Indexes 📇
-userSchema.index({ email: 1 });
 userSchema.index({ verificationToken: 1 });
 userSchema.index({ resetPasswordToken: 1 });
 userSchema.index({ 'subscription.stripeCustomerId': 1 });
+userSchema.index({ role: 1 });
+userSchema.index({ businessCategory: 1 });
 
 // Password hashing middleware 🔒
 userSchema.pre('save', async function(next) {
