@@ -341,35 +341,44 @@ const removeStaffMember = async (req, res) => {
 // Get all businesses (Admin only) 🏢
 const getAllBusinesses = async (req, res) => {
   try {
-    // Get pagination parameters
+    // Get pagination parameters 📄
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    // Get search and filter parameters
+    // Get search and filter parameters 🔍
     const search = req.query.search || '';
     const status = req.query.status;
     const category = req.query.category;
+    const verificationStatus = req.query.verified;
+    const subscriptionStatus = req.query.subscriptionStatus;
 
-    // Build query
+    // Build query 🏗️
     const query = { role: 'business' };
 
     // Add search condition
     if (search) {
       query.$or = [
         { businessName: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } }
+        { email: { $regex: search, $options: 'i' } },
+        { firstName: { $regex: search, $options: 'i' } },
+        { lastName: { $regex: search, $options: 'i' } }
       ];
+    }
+
+    // Add verification filter
+    if (verificationStatus !== undefined) {
+      query.isVerified = verificationStatus === 'true';
     }
 
     // Add status filter
     if (status) {
-      query['subscription.status'] = status;
+      query.isActive = status === 'active';
     }
 
     // Add category filter
     if (category) {
-      query.businessCategory = category;
+      query['businessProfile.category'] = category;
     }
 
     // Get total count for pagination
@@ -383,29 +392,83 @@ const getAllBusinesses = async (req, res) => {
       .limit(limit);
 
     // Get subscription details for each business
-    const businessesWithSubscription = await Promise.all(
+    const businessesWithDetails = await Promise.all(
       businesses.map(async (business) => {
         const subscription = await Subscription.findOne({ 
           userId: business._id,
           status: 'active'
         });
         
-        return {
-          ...business.toObject(),
-          subscription: subscription || null
+        // Format business data
+        const businessData = {
+          id: business._id,
+          basicInfo: {
+            firstName: business.firstName,
+            lastName: business.lastName,
+            email: business.email,
+            phoneNumber: business.phoneNumber || 'Not provided',
+            profilePicture: business.picUrl || null
+          },
+          businessProfile: {
+            businessName: business.businessProfile?.businessName || 'Not set',
+            category: business.businessProfile?.category || 'Not set',
+            description: business.businessProfile?.description || 'Not provided'
+          },
+          status: {
+            isVerified: business.isVerified,
+            isActive: business.isActive,
+            verificationBadge: business.isVerified ? '✅' : '⚠️',
+            activeStatus: business.isActive ? '🟢 Active' : '🔴 Inactive'
+          },
+          subscription: subscription ? {
+            plan: subscription.plan,
+            status: subscription.status,
+            validUntil: subscription.billing?.currentPeriodEnd,
+            autoRenew: !subscription.billing?.cancelAtPeriodEnd
+          } : {
+            plan: 'No active subscription',
+            status: 'inactive',
+            validUntil: null,
+            autoRenew: false
+          },
+          gdprConsent: {
+            marketing: business.gdprConsent?.marketing || false,
+            analytics: business.gdprConsent?.analytics || false,
+            lastUpdated: business.gdprConsent?.consentDate
+          },
+          activity: {
+            lastLogin: business.lastLogin || 'Never logged in',
+            createdAt: business.createdAt,
+            updatedAt: business.updatedAt
+          }
         };
+
+        return businessData;
       })
     );
+
+    // Calculate statistics
+    const stats = {
+      total,
+      verified: businessesWithDetails.filter(b => b.status.isVerified).length,
+      unverified: businessesWithDetails.filter(b => !b.status.isVerified).length,
+      active: businessesWithDetails.filter(b => b.status.isActive).length,
+      inactive: businessesWithDetails.filter(b => !b.status.isActive).length,
+      withSubscription: businessesWithDetails.filter(b => b.subscription.status === 'active').length
+    };
 
     res.json({
       success: true,
       data: {
-        businesses: businessesWithSubscription,
+        statistics: stats,
+        businesses: businessesWithDetails,
         pagination: {
           total,
           page,
           pages: Math.ceil(total / limit),
-          limit
+          limit,
+          hasNextPage: page < Math.ceil(total / limit),
+          hasPrevPage: page > 1
         }
       }
     });

@@ -355,7 +355,7 @@ const registerBusiness = async (req, res) => {
       data: {
         id: business._id,
         email: business.email,
-        businessName: business.businessProfile.businessName,
+        businessName: business.businessName,
         subscription: {
           plan: businessSubscription.plan,
           status: businessSubscription.status,

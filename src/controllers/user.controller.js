@@ -243,8 +243,7 @@ const uploadProfilePic = async (req, res) => {
     }
 
     // Get user ID from auth middleware
-    const userId = req.user.userId;
-
+    const userId = req.body.userId;
     // Upload to Firebase
     const imageUrl = await uploadToFirebase(req.file, userId);
 
