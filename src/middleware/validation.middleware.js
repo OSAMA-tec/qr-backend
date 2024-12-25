@@ -420,6 +420,119 @@ const voucherClaimValidation = [
   handleValidationErrors
 ];
 
+// Popup settings validation rules 🎯
+const popupSettingsValidation = [
+  body('template')
+    .isIn(['default', 'modern', 'festive'])
+    .withMessage('Invalid template selection'),
+  body('timing')
+    .isObject()
+    .withMessage('Timing settings must be an object'),
+  body('timing.displayDelay')
+    .isInt({ min: 0, max: 60000 })
+    .withMessage('Display delay must be between 0 and 60000 milliseconds'),
+  body('timing.displayFrequency')
+    .isIn(['once-per-session', 'once-per-day', 'every-time', 'once-only'])
+    .withMessage('Invalid display frequency'),
+  body('timing.scrollTrigger')
+    .optional()
+    .isInt({ min: 0, max: 100 })
+    .withMessage('Scroll trigger must be between 0 and 100 percent'),
+  body('design')
+    .isObject()
+    .withMessage('Design settings must be an object'),
+  body('design.layout')
+    .isIn(['centered', 'right-aligned', 'left-aligned', 'full-width'])
+    .withMessage('Invalid layout selection'),
+  body('design.colors')
+    .isObject()
+    .withMessage('Colors must be an object'),
+  body('design.colors.background')
+    .matches(/^#[0-9A-Fa-f]{6}$/)
+    .withMessage('Invalid background color format'),
+  body('design.colors.text')
+    .matches(/^#[0-9A-Fa-f]{6}$/)
+    .withMessage('Invalid text color format'),
+  body('design.colors.button')
+    .matches(/^#[0-9A-Fa-f]{6}$/)
+    .withMessage('Invalid button color format'),
+  body('design.logo')
+    .optional()
+    .isURL()
+    .withMessage('Logo must be a valid URL'),
+  body('content')
+    .isObject()
+    .withMessage('Content settings must be an object'),
+  body('content.title')
+    .trim()
+    .notEmpty()
+    .withMessage('Title is required')
+    .isLength({ max: 100 })
+    .withMessage('Title must be less than 100 characters'),
+  body('content.description')
+    .trim()
+    .notEmpty()
+    .withMessage('Description is required')
+    .isLength({ max: 500 })
+    .withMessage('Description must be less than 500 characters'),
+  body('content.buttonText')
+    .trim()
+    .notEmpty()
+    .withMessage('Button text is required')
+    .isLength({ max: 30 })
+    .withMessage('Button text must be less than 30 characters'),
+  handleValidationErrors
+];
+
+// Popup preview validation rules 👁️
+const popupPreviewValidation = [
+  body('template')
+    .isIn(['default', 'modern', 'festive'])
+    .withMessage('Invalid template selection'),
+  body('settings')
+    .isObject()
+    .withMessage('Settings must be an object'),
+  body('settings.colors')
+    .optional()
+    .isObject()
+    .withMessage('Colors must be an object'),
+  body('settings.colors.background')
+    .optional()
+    .matches(/^#[0-9A-Fa-f]{6}$/)
+    .withMessage('Invalid background color format'),
+  body('settings.colors.text')
+    .optional()
+    .matches(/^#[0-9A-Fa-f]{6}$/)
+    .withMessage('Invalid text color format'),
+  body('settings.colors.button')
+    .optional()
+    .matches(/^#[0-9A-Fa-f]{6}$/)
+    .withMessage('Invalid button color format'),
+  body('settings.logo')
+    .optional()
+    .isURL()
+    .withMessage('Logo must be a valid URL'),
+  body('content')
+    .isObject()
+    .withMessage('Content must be an object'),
+  body('content.title')
+    .optional()
+    .trim()
+    .isLength({ max: 100 })
+    .withMessage('Title must be less than 100 characters'),
+  body('content.description')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Description must be less than 500 characters'),
+  body('content.buttonText')
+    .optional()
+    .trim()
+    .isLength({ max: 30 })
+    .withMessage('Button text must be less than 30 characters'),
+  handleValidationErrors
+];
+
 module.exports = {
   registerValidation,
   loginValidation,
@@ -432,5 +545,7 @@ module.exports = {
   staffMemberValidation,
   businessRegistrationValidation,
   widgetCustomizationValidation,
-  voucherClaimValidation
+  voucherClaimValidation,
+  popupSettingsValidation,
+  popupPreviewValidation
 }; 
