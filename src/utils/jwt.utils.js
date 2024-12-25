@@ -2,17 +2,18 @@
 const jwt = require('jsonwebtoken');
 
 // Generate tokens 🎟️
-const generateTokens = (userId) => {
+const generateTokens = (userId,role) => {
   // Create access token (short-lived) ⚡
+  console.log(role)
   const accessToken = jwt.sign(
-    { userId },
+    { userId,role },
     process.env.JWT_ACCESS_SECRET,
-    { expiresIn: '15m' } // Access token expires in 15 minutes
+    { expiresIn: '3d' } // Access token expires in 15 minutes
   );
 
   // Create refresh token (long-lived) 🔄
   const refreshToken = jwt.sign(
-    { userId },
+    { userId,role },
     process.env.JWT_REFRESH_SECRET,
     { expiresIn: '7d' } // Refresh token expires in 7 days
   );

@@ -3,6 +3,7 @@ const User = require('../models/user.model');
 const { generateTokens, verifyRefreshToken } = require('../utils/jwt.utils');
 const { sendVerificationEmail, sendPasswordResetEmail } = require('../utils/email.utils');
 const crypto = require('crypto');
+const { Subscription } = require('../models/subscription.model');
 
 // Helper function to generate verification token 🎟️
 const generateVerificationToken = () => crypto.randomBytes(32).toString('hex');
@@ -168,6 +169,209 @@ const register = async (req, res) => {
   }
 };
 
+// Register admin controller 👑
+const registerAdmin = async (req, res) => {
+  try {
+    const { 
+      email, 
+      password, 
+      firstName, 
+      lastName, 
+      phoneNumber,
+      adminCode 
+    } = req.body;
+
+    // Verify admin registration code
+    if (adminCode !== process.env.ADMIN_REGISTRATION_CODE) {
+      return res.status(403).json({
+        success: false,
+        message: 'Invalid admin registration code! 🚫'
+      });
+    }
+
+    // Check if admin exists
+    const existingUser = await User.findOne({ 
+      $or: [
+        { email },
+        { role: 'admin' }  // Only one admin allowed for now
+      ]
+    });
+
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: existingUser.email === email ? 
+          'Email already registered! 📧' : 
+          'Admin account already exists! 👑'
+      });
+    }
+
+    // Create verification token
+    const verificationToken = generateVerificationToken();
+
+    // Create admin user
+    const admin = new User({
+      email,
+      password,
+      firstName,
+      lastName,
+      phoneNumber,
+      role: 'admin',
+      verificationToken,
+      isVerified: false,  // Require email verification even for admin
+      gdprConsent: {
+        marketing: false,
+        analytics: true,
+        consentDate: new Date()
+      }
+    });
+
+    await admin.save();
+
+    // Send verification email
+    await sendVerificationEmail(email, verificationToken);
+
+    // Log admin creation
+    console.log(`New admin account created: ${email} 👑`);
+
+    res.status(201).json({
+      success: true,
+      message: 'Admin registration successful! Please check your email to verify your account 📧',
+      data: {
+        email: admin.email,
+        firstName: admin.firstName,
+        lastName: admin.lastName,
+        role: admin.role
+      }
+    });
+  } catch (error) {
+    console.error('Admin registration error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Admin registration failed! Please try again later 😢'
+    });
+  }
+};
+
+// Register business controller 🏢
+const registerBusiness = async (req, res) => {
+  try {
+    // Check if user is admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only admins can register businesses! 🚫'
+      });
+    }
+
+    const {
+      email,
+      password,
+      firstName,
+      lastName,
+      businessName,
+      businessDescription,
+      businessCategory,
+      phoneNumber,
+      businessLocation,
+      subscription
+    } = req.body;
+
+    // First check if email exists
+    const existingEmail = await User.findOne({ email });
+    if (existingEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email already registered! 📧'
+      });
+    }
+
+    // Then check if business name exists
+    const existingBusiness = await User.findOne({
+      'businessProfile.businessName': businessName,
+      role: 'business'
+    });
+    if (existingBusiness) {
+      return res.status(400).json({
+        success: false,
+        message: 'Business name already exists! 🏢'
+      });
+    }
+
+    // Create verification token
+    const verificationToken = generateVerificationToken();
+
+    // Create business user
+    const business = new User({
+      email,
+      password,
+      firstName,
+      lastName,
+      phoneNumber,
+      role: 'business',
+      verificationToken,
+      isVerified: false,
+      businessProfile: {
+        businessName,
+        description: businessDescription,
+        category: businessCategory,
+        location: businessLocation
+      },
+      gdprConsent: {
+        marketing: true,
+        analytics: true,
+        consentDate: new Date()
+      }
+    });
+
+    await business.save();
+
+    // Create subscription with temporary Stripe IDs (will be updated later)
+    const businessSubscription = new Subscription({
+      businessId: business._id,
+      stripeCustomerId: 'temp_' + business._id, // Temporary ID
+      stripeSubscriptionId: 'temp_' + Date.now(), // Temporary ID
+      plan: subscription.plan || 'basic', // Default to basic if not specified
+      status: 'trialing',
+      billing: {
+        cycle: 'monthly',
+        currentPeriodStart: new Date(),
+        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        cancelAtPeriodEnd: false
+      }
+    });
+
+    await businessSubscription.save();
+
+    // Send verification email
+    await sendVerificationEmail(email, verificationToken);
+
+    // Log business creation
+    console.log(`New business account created by admin: ${email} 🏢`);
+
+    res.status(201).json({
+      success: true,
+      message: 'Business registration successful! Please check email to verify account 📧',
+      data: {
+        id: business._id,
+        email: business.email,
+        businessName: business.businessProfile.businessName,
+        subscription: {
+          plan: businessSubscription.plan,
+          status: businessSubscription.status,
+          validUntil: businessSubscription.billing.currentPeriodEnd
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Business registration error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Business registration failed! Please try again later 😢'
+    });
+  }
+};
+
 // Login controller 🔐
 const login = async (req, res) => {
   try {
@@ -198,9 +402,8 @@ const login = async (req, res) => {
         message: 'Please verify your email first! ✉️'
       });
     }
-
     // Generate tokens
-    const { accessToken, refreshToken } = generateTokens(user._id);
+    const { accessToken, refreshToken } = generateTokens(user._id,user.role);
 
     // Update last login
     user.lastLogin = new Date();
@@ -247,7 +450,7 @@ const refreshToken = async (req, res) => {
     }
 
     // Generate new tokens
-    const tokens = generateTokens(decoded.userId);
+    const tokens = generateTokens(decoded.userId, decoded.role);
 
     res.json({
       success: true,
@@ -402,6 +605,8 @@ const logout = async (req, res) => {
 
 module.exports = {
   register,
+  registerAdmin,
+  registerBusiness,
   login,
   refreshToken,
   forgotPassword,

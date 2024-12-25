@@ -19,9 +19,14 @@ const authMiddleware = (req, res, next) => {
     }
 
     // Add user to request 👤
-    req.user = { userId: decoded.userId };
+    req.user = { 
+      userId: decoded.userId,
+      role: decoded.role
+    };
+    
     next();
   } catch (error) {
+    console.error('Auth middleware error:', error);
     return res.status(401).json({ message: 'Authentication failed! 😢' });
   }
 };

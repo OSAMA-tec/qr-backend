@@ -84,9 +84,276 @@ const resetPasswordValidation = [
   handleValidationErrors
 ];
 
+// Admin registration validation rules 👑
+const adminRegistrationValidation = [
+  body('email')
+    .trim()
+    .isEmail()
+    .withMessage('Please enter a valid email address 📧')
+    .normalizeEmail(),
+  body('password')
+    .isLength({ min: 8 })
+    .withMessage('Password must be at least 8 characters long 🔑')
+    .matches(/^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&*])/)
+    .withMessage('Password must contain at least one number, lowercase, uppercase, and special character 🔒'),
+  body('firstName')
+    .trim()
+    .notEmpty()
+    .withMessage('First name is required 👤')
+    .isLength({ min: 2 })
+    .withMessage('First name must be at least 2 characters long'),
+  body('lastName')
+    .trim()
+    .notEmpty()
+    .withMessage('Last name is required 👤')
+    .isLength({ min: 2 })
+    .withMessage('Last name must be at least 2 characters long'),
+  body('adminCode')
+    .notEmpty()
+    .withMessage('Admin registration code is required 🔐')
+    .isLength({ min: 8 })
+    .withMessage('Invalid admin registration code format'),
+  body('phoneNumber')
+    .optional()
+    .matches(/^\+?[\d\s-]+$/)
+    .withMessage('Invalid phone number format 📱'),
+  handleValidationErrors
+];
+
+// User profile update validation rules 👤
+const profileUpdateValidation = [
+  body('firstName')
+    .optional()
+    .trim()
+    .isLength({ min: 2 })
+    .withMessage('First name must be at least 2 characters long'),
+  body('lastName')
+    .optional()
+    .trim()
+    .isLength({ min: 2 })
+    .withMessage('Last name must be at least 2 characters long'),
+  body('phoneNumber')
+    .optional()
+    .matches(/^\+?[\d\s-]+$/)
+    .withMessage('Invalid phone number format 📱'),
+  body('address')
+    .optional()
+    .isObject()
+    .withMessage('Address must be an object 🏠'),
+  body('address.street')
+    .optional()
+    .trim()
+    .notEmpty()
+    .withMessage('Street address cannot be empty'),
+  body('address.city')
+    .optional()
+    .trim()
+    .notEmpty()
+    .withMessage('City cannot be empty'),
+  body('address.state')
+    .optional()
+    .trim()
+    .notEmpty()
+    .withMessage('State cannot be empty'),
+  body('address.postalCode')
+    .optional()
+    .trim()
+    .matches(/^[A-Z\d]{3,10}$/i)
+    .withMessage('Invalid postal code format'),
+  body('address.country')
+    .optional()
+    .trim()
+    .notEmpty()
+    .withMessage('Country cannot be empty'),
+  handleValidationErrors
+];
+
+// GDPR consent validation rules 📜
+const gdprConsentValidation = [
+  body('marketing')
+    .isBoolean()
+    .withMessage('Marketing consent must be true or false'),
+  body('analytics')
+    .isBoolean()
+    .withMessage('Analytics consent must be true or false'),
+  handleValidationErrors
+];
+
+// Business profile update validation rules 🏢
+const businessProfileValidation = [
+  body('businessName')
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Business name must be between 2 and 100 characters'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ min: 10, max: 1000 })
+    .withMessage('Description must be between 10 and 1000 characters'),
+  body('category')
+    .optional()
+    .trim()
+    .notEmpty()
+    .withMessage('Business category is required'),
+  body('logo')
+    .optional()
+    .isURL()
+    .withMessage('Logo must be a valid URL'),
+  body('website')
+    .optional()
+    .isURL()
+    .withMessage('Website must be a valid URL'),
+  body('socialMedia')
+    .optional()
+    .isObject()
+    .withMessage('Social media must be an object'),
+  body('socialMedia.*.url')
+    .optional()
+    .isURL()
+    .withMessage('Social media URL must be valid'),
+  body('businessHours')
+    .optional()
+    .isArray()
+    .withMessage('Business hours must be an array'),
+  body('businessHours.*.day')
+    .optional()
+    .isIn(['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'])
+    .withMessage('Invalid day of week'),
+  body('businessHours.*.open')
+    .optional()
+    .matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage('Invalid opening time format (HH:MM)'),
+  body('businessHours.*.close')
+    .optional()
+    .matches(/^([01]?[0-9]|2[0-3]):[0-5][0-9]$/)
+    .withMessage('Invalid closing time format (HH:MM)'),
+  handleValidationErrors
+];
+
+// Staff member validation rules 👥
+const staffMemberValidation = [
+  body('email')
+    .trim()
+    .isEmail()
+    .withMessage('Please enter a valid email address 📧')
+    .normalizeEmail(),
+  body('firstName')
+    .trim()
+    .notEmpty()
+    .withMessage('First name is required 👤')
+    .isLength({ min: 2 })
+    .withMessage('First name must be at least 2 characters long'),
+  body('lastName')
+    .trim()
+    .notEmpty()
+    .withMessage('Last name is required 👤')
+    .isLength({ min: 2 })
+    .withMessage('Last name must be at least 2 characters long'),
+  body('role')
+    .isIn(['manager', 'staff'])
+    .withMessage('Invalid staff role'),
+  body('permissions')
+    .isArray()
+    .withMessage('Permissions must be an array')
+    .custom((value) => {
+      const validPermissions = ['manage_vouchers', 'view_analytics', 'manage_staff'];
+      return value.every(permission => validPermissions.includes(permission));
+    })
+    .withMessage('Invalid permissions specified'),
+  handleValidationErrors
+];
+
+// Business registration validation rules 🏢
+const businessRegistrationValidation = [
+  body('email')
+    .trim()
+    .isEmail()
+    .withMessage('Please enter a valid email address 📧')
+    .normalizeEmail(),
+  body('password')
+    .isLength({ min: 8 })
+    .withMessage('Password must be at least 8 characters long 🔑')
+    .matches(/^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])(?=.*[!@#$%^&*])/)
+    .withMessage('Password must contain at least one number, lowercase, uppercase, and special character 🔒'),
+  body('firstName')
+    .trim()
+    .notEmpty()
+    .withMessage('First name is required 👤')
+    .isLength({ min: 2 })
+    .withMessage('First name must be at least 2 characters long'),
+  body('lastName')
+    .trim()
+    .notEmpty()
+    .withMessage('Last name is required 👤')
+    .isLength({ min: 2 })
+    .withMessage('Last name must be at least 2 characters long'),
+  body('businessName')
+    .trim()
+    .notEmpty()
+    .withMessage('Business name is required 🏢')
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Business name must be between 2 and 100 characters'),
+  body('businessDescription')
+    .trim()
+    .notEmpty()
+    .withMessage('Business description is required 📝')
+    .isLength({ min: 10, max: 1000 })
+    .withMessage('Business description must be between 10 and 1000 characters'),
+  body('businessCategory')
+    .trim()
+    .notEmpty()
+    .withMessage('Business category is required 🏷️'),
+  body('phoneNumber')
+    .matches(/^\+?[\d\s-]+$/)
+    .withMessage('Invalid phone number format 📱'),
+  body('businessLocation')
+    .isObject()
+    .withMessage('Business location is required 📍'),
+  body('businessLocation.address')
+    .trim()
+    .notEmpty()
+    .withMessage('Business address is required'),
+  body('businessLocation.city')
+    .trim()
+    .notEmpty()
+    .withMessage('City is required'),
+  body('businessLocation.state')
+    .trim()
+    .notEmpty()
+    .withMessage('State is required'),
+  body('businessLocation.country')
+    .trim()
+    .notEmpty()
+    .withMessage('Country is required'),
+  body('businessLocation.zipCode')
+    .trim()
+    .matches(/^[A-Z\d]{3,10}$/i)
+    .withMessage('Invalid zip code format'),
+  body('businessLocation.coordinates')
+    .isObject()
+    .withMessage('Coordinates are required'),
+  body('businessLocation.coordinates.lat')
+    .isFloat({ min: -90, max: 90 })
+    .withMessage('Invalid latitude'),
+  body('businessLocation.coordinates.lng')
+    .isFloat({ min: -180, max: 180 })
+    .withMessage('Invalid longitude'),
+  body('subscription.plan')
+    .isIn(['basic', 'premium', 'enterprise'])
+    .withMessage('Invalid subscription plan'),
+  handleValidationErrors
+];
+
 module.exports = {
   registerValidation,
   loginValidation,
   forgotPasswordValidation,
-  resetPasswordValidation
+  resetPasswordValidation,
+  adminRegistrationValidation,
+  profileUpdateValidation,
+  gdprConsentValidation,
+  businessProfileValidation,
+  staffMemberValidation,
+  businessRegistrationValidation
 }; 
