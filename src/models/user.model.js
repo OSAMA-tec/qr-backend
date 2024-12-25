@@ -22,7 +22,7 @@ const userSchema = new mongoose.Schema({
     enum: ['customer', 'business', 'admin'],
     default: 'customer'
   },
-  
+  picUrl:String,
   // Profile Info
   firstName: { type: String, required: true },
   lastName: { type: String, required: true },

@@ -21,7 +21,7 @@ const {
   businessRegistrationValidation
 } = require('../middleware/validation.middleware');
 
-const { csrfProtection } = require('../middleware/csrf.middleware');
+const { csrfProtection, generateToken } = require('../middleware/csrf.middleware');
 const authMiddleware = require('../middleware/auth.middleware');
 
 // Custom middleware to check if user is admin 👑
@@ -36,10 +36,8 @@ const isAdminMiddleware = (req, res, next) => {
   next();
 };
 
-// CSRF token route 🔑
-router.get('/csrf-token', csrfProtection, (req, res) => {
-  res.json({ csrfToken: req.csrfToken() });
-});
+// CSRF token route 🔑️
+router.get('/csrf-token', csrfProtection, generateToken);
 
 // Public routes 🌐
 router.post('/register', registerValidation, register);

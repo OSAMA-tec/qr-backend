@@ -2,6 +2,7 @@
 const User = require('../models/user.model');
 const Coupon = require('../models/coupon.model');
 const Transaction = require('../models/transaction.model');
+const { uploadToFirebase } = require('../utils/upload.utils');
 
 // Get user profile 👤
 const getProfile = async (req, res) => {
@@ -230,11 +231,83 @@ const getWalletPasses = async (req, res) => {
   }
 };
 
+// Upload profile picture 🖼️
+const uploadProfilePic = async (req, res) => {
+  try {
+    // Check if file exists
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded! 🚫'
+      });
+    }
+
+    // Get user ID from auth middleware
+    const userId = req.user.userId;
+
+    // Upload to Firebase
+    const imageUrl = await uploadToFirebase(req.file, userId);
+
+    // Update user profile with new image URL
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { picUrl: imageUrl },
+      { new: true }
+    ).select('-password');
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile picture uploaded successfully! 🎉',
+      data: {
+        user: updatedUser
+      }
+    });
+  } catch (error) {
+    console.error('Profile picture upload error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload profile picture! 😢',
+      error: error.message
+    });
+  }
+};
+
+// Delete profile picture 🗑️
+const deleteProfilePic = async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    // Update user to remove profile picture URL
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $unset: { picUrl: 1 } },
+      { new: true }
+    ).select('-password');
+
+    res.status(200).json({
+      success: true,
+      message: 'Profile picture deleted successfully! 🗑️',
+      data: {
+        user: updatedUser
+      }
+    });
+  } catch (error) {
+    console.error('Profile picture deletion error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete profile picture! 😢',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
   updateGdprConsent,
   getVouchers,
   getVoucherDetails,
-  getWalletPasses
+  getWalletPasses,
+  uploadProfilePic,
+  deleteProfilePic
 }; 

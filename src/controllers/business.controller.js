@@ -338,6 +338,87 @@ const removeStaffMember = async (req, res) => {
   }
 };
 
+// Get all businesses (Admin only) 🏢
+const getAllBusinesses = async (req, res) => {
+  try {
+    // Get pagination parameters
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Get search and filter parameters
+    const search = req.query.search || '';
+    const status = req.query.status;
+    const category = req.query.category;
+
+    // Build query
+    const query = { role: 'business' };
+
+    // Add search condition
+    if (search) {
+      query.$or = [
+        { businessName: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    // Add status filter
+    if (status) {
+      query['subscription.status'] = status;
+    }
+
+    // Add category filter
+    if (category) {
+      query.businessCategory = category;
+    }
+
+    // Get total count for pagination
+    const total = await User.countDocuments(query);
+
+    // Get businesses with pagination
+    const businesses = await User.find(query)
+      .select('-password -resetPasswordToken -resetPasswordExpires -verificationToken')
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(limit);
+
+    // Get subscription details for each business
+    const businessesWithSubscription = await Promise.all(
+      businesses.map(async (business) => {
+        const subscription = await Subscription.findOne({ 
+          userId: business._id,
+          status: 'active'
+        });
+        
+        return {
+          ...business.toObject(),
+          subscription: subscription || null
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      data: {
+        businesses: businessesWithSubscription,
+        pagination: {
+          total,
+          page,
+          pages: Math.ceil(total / limit),
+          limit
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get all businesses error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch businesses! Please try again later 😢',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   getBusinessProfile,
   updateBusinessProfile,
@@ -345,5 +426,6 @@ module.exports = {
   getCustomerDetails,
   listStaff,
   addStaffMember,
-  removeStaffMember
+  removeStaffMember,
+  getAllBusinesses
 }; 

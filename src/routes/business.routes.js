@@ -7,7 +7,8 @@ const {
   getCustomerDetails,
   listStaff,
   addStaffMember,
-  removeStaffMember
+  removeStaffMember,
+  getAllBusinesses
 } = require('../controllers/business.controller');
 
 const {
@@ -18,20 +19,27 @@ const {
 const authMiddleware = require('../middleware/auth.middleware');
 const { csrfProtection } = require('../middleware/csrf.middleware');
 
-// Custom middleware to check if user is a business 🏢
-const isBusinessMiddleware = (req, res, next) => {
-  if (req.user.role !== 'business') {
+// Admin middleware 👑
+const isAdmin = (req, res, next) => {
+  if (req.user.role !== 'admin') {
     return res.status(403).json({
       success: false,
-      message: 'Access denied! Only business accounts can access this resource 🚫'
+      message: 'Access denied! Only admins can access this resource 🚫'
     });
   }
   next();
 };
 
-// Apply auth and business middleware to all routes 🔒
+// Apply auth middleware to all routes 🔒
 router.use(authMiddleware);
-router.use(isBusinessMiddleware);
+
+// Admin routes 👑
+router.get(
+  '/all',
+  isAdmin,
+  csrfProtection,
+  getAllBusinesses
+);
 
 // Business profile routes 🏢
 router.get('/business-profile', getBusinessProfile);

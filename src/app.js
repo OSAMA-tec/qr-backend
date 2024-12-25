@@ -23,11 +23,28 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser()); // Add cookie parser before CSRF
+
+// CORS configuration 🌐
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000', // Allow your frontend domain
-  credentials: true // Allow cookies to be sent
+  origin: process.env.CLIENT_URL, // Use environment variable
+  credentials: true, // Important for cookies
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization',
+    'X-XSRF-TOKEN',     // Match frontend header
+    'X-CSRF-Token',     // Alternative name
+    'CSRF-Token'        // Another alternative
+  ],
+  exposedHeaders: ['X-XSRF-TOKEN', 'X-CSRF-Token', 'CSRF-Token'] // Expose all possible CSRF headers
 }));
-app.use(helmet());
+
+// Security headers 🔒
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" }, // Allow cross-origin resource sharing
+  crossOriginEmbedderPolicy: false // Allow embedding in iframes (for widget)
+}));
+
 app.use(morgan('dev'));
 
 // Routes 🛣️
@@ -39,6 +56,7 @@ app.use('/api/widget', widgetRoutes);
 app.use('/api/vouchers', voucherRoutes);
 app.use('/api/qr-codes', qrCodeRoutes);
 
+// Health check route 🏥
 app.get('/', (req, res) => {
   res.json({ message: 'Welcome to our API! 🎉' });
 });
@@ -48,8 +66,12 @@ app.use(handleCSRFError);
 
 // General error handling middleware ⚠️
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: 'Something went wrong! 😢' });
+  console.error('Error:', err.stack);
+  res.status(500).json({ 
+    success: false,
+    message: 'Something went wrong! 😢',
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+  });
 });
 
 module.exports = app;
