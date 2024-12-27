@@ -45,7 +45,7 @@ const getBusinessProfile = async (req, res) => {
 // Update business profile ✏️
 const updateBusinessProfile = async (req, res) => {
   try {
-    const userId = req.user.userId;
+    const userId = req.body.userId;
     const updates = req.body;
 
     // Remove fields that shouldn't be updated directly
@@ -341,6 +341,14 @@ const removeStaffMember = async (req, res) => {
 // Get all businesses (Admin only) 🏢
 const getAllBusinesses = async (req, res) => {
   try {
+    // Check if user is admin 👑
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only admins can access this resource! 🚫'
+      });
+    }
+
     // Get pagination parameters 📄
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
@@ -352,6 +360,8 @@ const getAllBusinesses = async (req, res) => {
     const category = req.query.category;
     const verificationStatus = req.query.verified;
     const subscriptionStatus = req.query.subscriptionStatus;
+    const sortBy = req.query.sortBy || 'createdAt'; // Default sort by creation date
+    const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1; // Default to descending
 
     // Build query 🏗️
     const query = { role: 'business' };
@@ -359,10 +369,11 @@ const getAllBusinesses = async (req, res) => {
     // Add search condition
     if (search) {
       query.$or = [
-        { businessName: { $regex: search, $options: 'i' } },
+        { 'businessProfile.businessName': { $regex: search, $options: 'i' } },
         { email: { $regex: search, $options: 'i' } },
         { firstName: { $regex: search, $options: 'i' } },
-        { lastName: { $regex: search, $options: 'i' } }
+        { lastName: { $regex: search, $options: 'i' } },
+        { phoneNumber: { $regex: search, $options: 'i' } }
       ];
     }
 
@@ -384,10 +395,10 @@ const getAllBusinesses = async (req, res) => {
     // Get total count for pagination
     const total = await User.countDocuments(query);
 
-    // Get businesses with pagination
+    // Get businesses with pagination and sorting
     const businesses = await User.find(query)
       .select('-password -resetPasswordToken -resetPasswordExpires -verificationToken')
-      .sort({ createdAt: -1 })
+      .sort({ [sortBy]: sortOrder })
       .skip(skip)
       .limit(limit);
 
@@ -395,28 +406,39 @@ const getAllBusinesses = async (req, res) => {
     const businessesWithDetails = await Promise.all(
       businesses.map(async (business) => {
         const subscription = await Subscription.findOne({ 
-          userId: business._id,
-          status: 'active'
-        });
+          businessId: business._id
+        }).sort({ createdAt: -1 }); // Get the most recent subscription
         
         // Format business data
-        const businessData = {
+        return {
           id: business._id,
           basicInfo: {
             firstName: business.firstName,
             lastName: business.lastName,
             email: business.email,
             phoneNumber: business.phoneNumber || 'Not provided',
-            profilePicture: business.picUrl || null
+            profilePicture: business.picUrl || null,
+            dateOfBirth: business.dateOfBirth || null
           },
           businessProfile: {
-            businessName: business.businessProfile?.businessName || 'Not set',
-            category: business.businessProfile?.category || 'Not set',
-            description: business.businessProfile?.description || 'Not provided'
+            businessName: business.businessProfile?.businessName || business.businessName || 'Not set',
+            category: business.businessProfile?.category || business.businessCategory || 'Not set',
+            description: business.businessProfile?.description || business.businessDescription || 'Not provided',
+            location: {
+              address: business.businessProfile?.location?.address || business.businessLocation?.address || null,
+              city: business.businessProfile?.location?.city || business.businessLocation?.city || null,
+              state: business.businessProfile?.location?.state || business.businessLocation?.state || null,
+              country: business.businessProfile?.location?.country || business.businessLocation?.country || null,
+              zipCode: business.businessProfile?.location?.zipCode || business.businessLocation?.zipCode || null,
+              coordinates: {
+                lat: business.businessProfile?.location?.coordinates?.lat || business.businessLocation?.coordinates?.lat || null,
+                lng: business.businessProfile?.location?.coordinates?.lng || business.businessLocation?.coordinates?.lng || null
+              }
+            }
           },
           status: {
-            isVerified: business.isVerified,
-            isActive: business.isActive,
+            isVerified: business.isVerified || false,
+            isActive: business.isActive || false,
             verificationBadge: business.isVerified ? '✅' : '⚠️',
             activeStatus: business.isActive ? '🟢 Active' : '🔴 Inactive'
           },
@@ -424,12 +446,18 @@ const getAllBusinesses = async (req, res) => {
             plan: subscription.plan,
             status: subscription.status,
             validUntil: subscription.billing?.currentPeriodEnd,
-            autoRenew: !subscription.billing?.cancelAtPeriodEnd
+            autoRenew: !subscription.billing?.cancelAtPeriodEnd,
+            features: subscription.features || {},
+            stripeDetails: {
+              customerId: subscription.stripeCustomerId,
+              subscriptionId: subscription.stripeSubscriptionId
+            }
           } : {
             plan: 'No active subscription',
             status: 'inactive',
             validUntil: null,
-            autoRenew: false
+            autoRenew: false,
+            features: {}
           },
           gdprConsent: {
             marketing: business.gdprConsent?.marketing || false,
@@ -440,25 +468,47 @@ const getAllBusinesses = async (req, res) => {
             lastLogin: business.lastLogin || 'Never logged in',
             createdAt: business.createdAt,
             updatedAt: business.updatedAt
+          },
+          metadata: {
+            registrationIP: business.registrationIP,
+            lastLoginIP: business.lastLoginIP,
+            deviceInfo: business.deviceInfo || {},
+            browser: business.browser || 'Unknown'
           }
         };
-
-        return businessData;
       })
     );
 
-    // Calculate statistics
+    // Calculate statistics 📊
     const stats = {
       total,
-      verified: businessesWithDetails.filter(b => b.status.isVerified).length,
-      unverified: businessesWithDetails.filter(b => !b.status.isVerified).length,
-      active: businessesWithDetails.filter(b => b.status.isActive).length,
-      inactive: businessesWithDetails.filter(b => !b.status.isActive).length,
-      withSubscription: businessesWithDetails.filter(b => b.subscription.status === 'active').length
+      activeToday: businessesWithDetails.filter(b => {
+        const today = new Date();
+        const lastLogin = new Date(b.activity.lastLogin);
+        return b.status.isActive && lastLogin.toDateString() === today.toDateString();
+      }).length,
+      byStatus: {
+        verified: businessesWithDetails.filter(b => b.status.isVerified).length,
+        unverified: businessesWithDetails.filter(b => !b.status.isVerified).length,
+        active: businessesWithDetails.filter(b => b.status.isActive).length,
+        inactive: businessesWithDetails.filter(b => !b.status.isActive).length
+      },
+      bySubscription: {
+        basic: businessesWithDetails.filter(b => b.subscription.plan === 'basic').length,
+        premium: businessesWithDetails.filter(b => b.subscription.plan === 'premium').length,
+        enterprise: businessesWithDetails.filter(b => b.subscription.plan === 'enterprise').length,
+        noSubscription: businessesWithDetails.filter(b => b.subscription.plan === 'No active subscription').length
+      },
+      byConsent: {
+        marketing: businessesWithDetails.filter(b => b.gdprConsent.marketing).length,
+        analytics: businessesWithDetails.filter(b => b.gdprConsent.analytics).length
+      }
     };
 
-    res.json({
+    // Return formatted response
+    return res.json({
       success: true,
+      timestamp: new Date(),
       data: {
         statistics: stats,
         businesses: businessesWithDetails,
@@ -468,16 +518,34 @@ const getAllBusinesses = async (req, res) => {
           pages: Math.ceil(total / limit),
           limit,
           hasNextPage: page < Math.ceil(total / limit),
-          hasPrevPage: page > 1
+          hasPrevPage: page > 1,
+          nextPage: page < Math.ceil(total / limit) ? page + 1 : null,
+          prevPage: page > 1 ? page - 1 : null
+        },
+        filters: {
+          search: search || null,
+          status: status || null,
+          category: category || null,
+          verificationStatus: verificationStatus || null,
+          subscriptionStatus: subscriptionStatus || null
+        },
+        sorting: {
+          field: sortBy,
+          order: sortOrder === 1 ? 'asc' : 'desc'
         }
-      }
+      },
+      message: 'Businesses fetched successfully! 🎉'
     });
   } catch (error) {
     console.error('Get all businesses error:', error);
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
+      timestamp: new Date(),
       message: 'Failed to fetch businesses! Please try again later 😢',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? {
+        message: error.message,
+        stack: error.stack
+      } : undefined
     });
   }
 };

@@ -257,7 +257,7 @@ const registerAdmin = async (req, res) => {
 const registerBusiness = async (req, res) => {
   try {
     // Check if user is admin
-    if (req.user.role !== 'admin') {
+    if (req.user?.role !== 'admin') {
       return res.status(403).json({
         success: false,
         message: 'Only admins can register businesses! 🚫'
@@ -274,8 +274,16 @@ const registerBusiness = async (req, res) => {
       businessCategory,
       phoneNumber,
       businessLocation,
-      subscription
+      subscription = { plan: 'basic' } // Default to basic if not provided
     } = req.body;
+
+    // Validate required fields
+    if (!email || !password || !firstName || !lastName || !businessName || !businessDescription || !businessCategory) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields! Please check your input 📝'
+      });
+    }
 
     // First check if email exists
     const existingEmail = await User.findOne({ email });
@@ -286,9 +294,9 @@ const registerBusiness = async (req, res) => {
       });
     }
 
-    // Then check if business name exists
+    // Then check if business name exists (case insensitive)
     const existingBusiness = await User.findOne({
-      'businessProfile.businessName': businessName,
+      'businessProfile.businessName': { $regex: new RegExp('^' + businessName + '$', 'i') },
       role: 'business'
     });
     if (existingBusiness) {
@@ -301,8 +309,8 @@ const registerBusiness = async (req, res) => {
     // Create verification token
     const verificationToken = generateVerificationToken();
 
-    // Create business user
-    const business = new User({
+    // Create business user with proper error handling
+    const businessData = {
       email,
       password,
       firstName,
@@ -311,63 +319,126 @@ const registerBusiness = async (req, res) => {
       role: 'business',
       verificationToken,
       isVerified: false,
+      // Direct business fields
+      businessName,  // Add at root level for backward compatibility
+      businessDescription,
+      businessCategory,
+      businessLocation,
+      // Structured business profile
       businessProfile: {
         businessName,
         description: businessDescription,
         category: businessCategory,
-        location: businessLocation
+        location: {
+          address: businessLocation?.address || '',
+          city: businessLocation?.city || '',
+          state: businessLocation?.state || '',
+          country: businessLocation?.country || '',
+          zipCode: businessLocation?.zipCode || '',
+          coordinates: {
+            lat: businessLocation?.coordinates?.lat || null,
+            lng: businessLocation?.coordinates?.lng || null
+          }
+        },
+        status: 'active',
+        createdAt: new Date(),
+        updatedAt: new Date()
       },
       gdprConsent: {
-        marketing: true,
-        analytics: true,
+        marketing: false,  // Default to false, let business opt-in later
+        analytics: true,   // Required for basic functionality
         consentDate: new Date()
       }
-    });
+    };
 
+    const business = new User(businessData);
     await business.save();
 
-    // Create subscription with temporary Stripe IDs (will be updated later)
-    const businessSubscription = new Subscription({
+    // Create subscription with proper plan validation
+    const validPlans = ['basic', 'premium', 'enterprise'];
+    const subscriptionPlan = validPlans.includes(subscription.plan) ? subscription.plan : 'basic';
+    
+    const subscriptionData = {
       businessId: business._id,
-      stripeCustomerId: 'temp_' + business._id, // Temporary ID
-      stripeSubscriptionId: 'temp_' + Date.now(), // Temporary ID
-      plan: subscription.plan || 'basic', // Default to basic if not specified
+      stripeCustomerId: `temp_${business._id}`,
+      stripeSubscriptionId: `temp_${Date.now()}`,
+      plan: subscriptionPlan,
       status: 'trialing',
       billing: {
         cycle: 'monthly',
         currentPeriodStart: new Date(),
-        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days
+        currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days trial
         cancelAtPeriodEnd: false
+      },
+      features: {
+        maxVouchers: subscriptionPlan === 'basic' ? 100 : 
+                     subscriptionPlan === 'premium' ? 500 : 1000,
+        analytics: subscriptionPlan !== 'basic',
+        customBranding: subscriptionPlan === 'enterprise',
+        priority_support: subscriptionPlan === 'enterprise'
       }
-    });
+    };
 
+    const businessSubscription = new Subscription(subscriptionData);
     await businessSubscription.save();
 
-    // Send verification email
-    await sendVerificationEmail(email, verificationToken);
+    // Send verification email with error handling
+    try {
+      await sendVerificationEmail(email, verificationToken);
+    } catch (emailError) {
+      console.error('Failed to send verification email:', emailError);
+      // Don't fail the registration, but log the error
+    }
 
-    // Log business creation
-    console.log(`New business account created by admin: ${email} 🏢`);
+    // Log business creation with more details
+    console.log(`New business account created 🏢
+      Email: ${email}
+      Business Name: ${businessName}
+      Category: ${businessCategory}
+      Plan: ${subscriptionPlan}
+    `);
 
-    res.status(201).json({
+    // Return success response with business details
+    return res.status(201).json({
       success: true,
       message: 'Business registration successful! Please check email to verify account 📧',
       data: {
         id: business._id,
         email: business.email,
-        businessName: business.businessName,
+        businessName: business.businessProfile?.businessName,
+        businessCategory: business.businessProfile.category,
         subscription: {
           plan: businessSubscription.plan,
           status: businessSubscription.status,
-          validUntil: businessSubscription.billing.currentPeriodEnd
+          validUntil: businessSubscription.billing.currentPeriodEnd,
+          features: businessSubscription.features
         }
       }
     });
   } catch (error) {
     console.error('Business registration error:', error);
-    res.status(500).json({
+    
+    // Handle specific MongoDB errors
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'A business with this name or email already exists! 🔄'
+      });
+    }
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid input data! Please check your input 📝',
+        errors: Object.values(error.errors).map(err => err.message)
+      });
+    }
+    
+    return res.status(500).json({
       success: false,
-      message: 'Business registration failed! Please try again later 😢'
+      message: 'Business registration failed! Please try again later 😢',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
