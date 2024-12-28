@@ -406,7 +406,7 @@ const registerBusiness = async (req, res) => {
         id: business._id,
         email: business.email,
         businessName: business.businessProfile?.businessName,
-        businessCategory: business.businessProfile.category,
+        businessCategory: business.businessProfile?.category,
         subscription: {
           plan: businessSubscription.plan,
           status: businessSubscription.status,
