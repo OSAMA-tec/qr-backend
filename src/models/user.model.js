@@ -14,15 +14,31 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: true,
-    minlength: 6
+    required: function() {
+      return !this.isGuest; // Password only required for non-guest users
+    }
   },
   role: {
     type: String,
     enum: ['customer', 'business', 'admin'],
     default: 'customer'
   },
-  picUrl:String,
+  isGuest: {
+    type: Boolean,
+    default: false
+  },
+  guestDetails: {
+    description: String,
+    claimedFrom: {
+      type: String,
+      enum: ['widget', 'popup', 'qr']
+    },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  },
+  picUrl: String,
   // Profile Info
   firstName: { type: String, required: true },
   lastName: { type: String, required: true },
@@ -30,18 +46,46 @@ const userSchema = new mongoose.Schema({
   dateOfBirth: { type: Date },
   
   // Business Profile (if role is business)
-  businessName: String,
-  businessDescription: String,
-  businessCategory: String,
-  businessLocation: {
-    address: String,
-    city: String,
-    state: String,
-    country: String,
-    zipCode: String,
-    coordinates: {
-      lat: Number,
-      lng: Number
+  businessProfile: {
+    businessName: String,
+    description: String,
+    category: String,
+    logo: String,
+    location: {
+      address: String,
+      city: String,
+      state: String,
+      country: String,
+      zipCode: String,
+      coordinates: {
+        lat: Number,
+        lng: Number
+      }
+    },
+    widgetSettings: {
+      position: String,
+      timing: String,
+      animation: String,
+      colors: {
+        primary: String,
+        secondary: String,
+        text: String
+      },
+      displayRules: {
+        delay: Number,
+        scrollPercentage: Number
+      },
+      updatedAt: Date
+    },
+    widgetTheme: {
+      type: String,
+      enum: ['light', 'dark', 'custom'],
+      default: 'light'
+    },
+    status: {
+      type: String,
+      enum: ['active', 'inactive', 'suspended'],
+      default: 'active'
     }
   },
 

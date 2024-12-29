@@ -5,7 +5,10 @@ const {
   claimVoucher,
   getCustomizationOptions,
   updateWidgetAppearance,
-  getEmbedCode
+  getEmbedCode,
+  manageBusinessWidget,
+  getAllBusinessWidgets,
+  getBusinessWidgetDetails
 } = require('../controllers/widget.controller');
 
 const {
@@ -15,6 +18,7 @@ const {
 
 const authMiddleware = require('../middleware/auth.middleware');
 const { csrfProtection } = require('../middleware/csrf.middleware');
+const { upload } = require('../utils/upload.utils');
 
 // Custom middleware to check if user is business 🏢
 const isBusinessMiddleware = (req, res, next) => {
@@ -27,31 +31,41 @@ const isBusinessMiddleware = (req, res, next) => {
   next();
 };
 
-// Widget configuration routes 🔧
-router.get('/:businessId/config', getWidgetConfig);  // Public route
+// Custom middleware to check if user is admin 👑
+const isAdminMiddleware = (req, res, next) => {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied! Only admins can access this resource 🚫'
+    });
+  }
+  next();
+};
 
-// Voucher claim route 🎟️
-router.post(
-  '/claim-voucher',
+// Public widget routes 🌐
+router.get('/:businessId/config', getWidgetConfig);  // Get widget configuration
+router.post('/claim-voucher', csrfProtection, voucherClaimValidation, claimVoucher);  // Claim voucher as guest
+
+// Admin routes for managing business widgets 👑
+router.get('/admin/businesses', authMiddleware, isAdminMiddleware, getAllBusinessWidgets);  // List all business widgets
+router.get('/admin/businesses/:businessId', authMiddleware, isAdminMiddleware, getBusinessWidgetDetails);  // Get specific widget details
+router.put(
+  '/admin/businesses/:businessId',
+  authMiddleware,
+  isAdminMiddleware,
   csrfProtection,
-  voucherClaimValidation,
-  claimVoucher
-);
+  upload.single('logo'),
+  widgetCustomizationValidation,
+  manageBusinessWidget
+);  // Update business widget
 
 // Protected business routes 🔒
 router.use(authMiddleware);
 router.use(isBusinessMiddleware);
 
-// Customization routes 🎨
-router.get('/customize', getCustomizationOptions);
-router.put(
-  '/customize',
-  csrfProtection,
-  widgetCustomizationValidation,
-  updateWidgetAppearance
-);
-
-// Embed code route 📝
-router.get('/embed-code', getEmbedCode);
+// Widget management routes
+router.get('/customize', getCustomizationOptions);  // Get customization options
+router.put('/customize', csrfProtection, widgetCustomizationValidation, updateWidgetAppearance);  // Update widget appearance
+router.get('/embed-code', getEmbedCode);  // Get embed code
 
 module.exports = router; 
