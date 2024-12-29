@@ -8,7 +8,9 @@ const {
   getEmbedCode,
   manageBusinessWidget,
   getAllBusinessWidgets,
-  getBusinessWidgetDetails
+  getBusinessWidgetDetails,
+  linkVouchersToWidget,
+  getBusinessOwnWidget
 } = require('../controllers/widget.controller');
 
 const {
@@ -64,8 +66,12 @@ router.use(authMiddleware);
 router.use(isBusinessMiddleware);
 
 // Widget management routes
-router.get('/customize', getCustomizationOptions);  // Get customization options
-router.put('/customize', csrfProtection, widgetCustomizationValidation, updateWidgetAppearance);  // Update widget appearance
-router.get('/embed-code', getEmbedCode);  // Get embed code
+router.get('/my-widget', getBusinessOwnWidget);  // 🆕 Get business's own widget with vouchers
+router.get('/customize', getCustomizationOptions);
+router.put('/customize', csrfProtection, widgetCustomizationValidation, updateWidgetAppearance);
+router.get('/embed-code', getEmbedCode);
+
+// Voucher linking route 🔗
+router.put('/vouchers', csrfProtection, linkVouchersToWidget);
 
 module.exports = router; 

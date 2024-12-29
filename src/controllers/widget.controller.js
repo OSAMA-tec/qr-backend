@@ -22,8 +22,12 @@ const getWidgetConfig = async (req, res) => {
       });
     }
 
-    // Get active coupons for the business
+    // Get linked vouchers first
+    const linkedVoucherIds = business.businessProfile?.widgetSettings?.linkedVouchers || [];
+    
+    // Get active coupons that are linked to the widget
     const activeCoupons = await Coupon.find({
+      _id: { $in: linkedVoucherIds },
       businessId,
       isActive: true,
       startDate: { $lte: new Date() },
@@ -668,14 +672,234 @@ const getTemporaryWalletUrls = (claimCode) => {
   };
 };
 
+// Business: Link/Unlink vouchers with widget 🔗
+const linkVouchersToWidget = async (req, res) => {
+  try {
+    const { linkedVouchers } = req.body;
+    const businessId = req.user.userId;
+
+    // Validate input
+    if (!Array.isArray(linkedVouchers)) {
+      return res.status(400).json({
+        success: false,
+        message: 'linkedVouchers must be an array! 🚫'
+      });
+    }
+
+    // Validate if voucher belongs to the business
+    const validVoucher = await Coupon.findOne({
+      _id: linkedVouchers[0],
+      businessId,
+      isActive: true
+    });
+
+    if (!validVoucher) {
+      return res.status(400).json({
+        success: false,
+        message: 'Voucher not found or does not belong to your business! 🚫'
+      });
+    }
+
+    // Get business with current widget settings
+    const business = await User.findById(businessId).populate('businessProfile.widgetSettings.linkedVouchers');
+    
+    if (!business) {
+      return res.status(404).json({
+        success: false,
+        message: 'Business not found! 🏢'
+      });
+    }
+
+    // Initialize widgetSettings if not exists
+    if (!business.businessProfile) {
+      business.businessProfile = {};
+    }
+    if (!business.businessProfile.widgetSettings) {
+      business.businessProfile.widgetSettings = {
+        position: 'bottom-right',
+        timing: 'immediate',
+        animation: 'slide',
+        colors: {
+          primary: '#4CAF50',
+          secondary: '#2196F3',
+          text: '#000000'
+        },
+        displayRules: {
+          delay: 0,
+          scrollPercentage: 0,
+          showOnMobile: true,
+          showOnDesktop: true
+        },
+        linkedVouchers: []
+      };
+    }
+
+    // Update linked vouchers
+    business.businessProfile.widgetSettings.linkedVouchers = linkedVouchers;
+    business.businessProfile.widgetSettings.updatedAt = new Date();
+
+    // Save the changes
+    await business.save();
+
+    // Get updated voucher details
+    const updatedVoucher = await Coupon.findById(linkedVouchers[0])
+      .select('title description discountType discountValue startDate endDate maxRedemptions currentRedemptions');
+
+    res.json({
+      success: true,
+      message: 'Voucher linked with widget successfully! 🎉',
+      data: {
+        linkedVoucher: {
+          id: updatedVoucher._id,
+          title: updatedVoucher.title,
+          description: updatedVoucher.description,
+          discount: {
+            type: updatedVoucher.discountType,
+            value: updatedVoucher.discountValue
+          },
+          validity: {
+            start: updatedVoucher.startDate,
+            end: updatedVoucher.endDate
+          },
+          redemptions: {
+            max: updatedVoucher.maxRedemptions || 'unlimited',
+            current: updatedVoucher.currentRedemptions,
+            remaining: updatedVoucher.maxRedemptions ? 
+              updatedVoucher.maxRedemptions - updatedVoucher.currentRedemptions : 
+              'unlimited'
+          }
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Link vouchers error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to link voucher with widget! 😢',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Business: Get own widget details with vouchers 🎯
+const getBusinessOwnWidget = async (req, res) => {
+  try {
+    const businessId = req.user.userId;
+
+    // Get business details with widget settings
+    const business = await User.findOne({ 
+      _id: businessId,
+      role: 'business' 
+    }).select('businessProfile email businessName picUrl');
+
+    if (!business) {
+      return res.status(404).json({
+        success: false,
+        message: 'Business profile not found! 🏢'
+      });
+    }
+
+    // Get all active vouchers for the business
+    const allVouchers = await Coupon.find({
+      businessId,
+      isActive: true,
+      endDate: { $gte: new Date() }
+    }).select('title description discountType discountValue startDate endDate maxRedemptions currentRedemptions');
+
+    // Get linked voucher IDs
+    const linkedVoucherIds = business.businessProfile?.widgetSettings?.linkedVouchers || [];
+
+    // Separate linked and unlinked vouchers
+    const { linkedVouchers, unlinkedVouchers } = allVouchers.reduce((acc, voucher) => {
+      if (linkedVoucherIds.includes(voucher._id.toString())) {
+        acc.linkedVouchers.push(voucher);
+      } else {
+        acc.unlinkedVouchers.push(voucher);
+      }
+      return acc;
+    }, { linkedVouchers: [], unlinkedVouchers: [] });
+
+    // Format voucher data
+    const formatVoucher = (voucher) => ({
+      id: voucher._id,
+      title: voucher.title,
+      description: voucher.description,
+      discount: {
+        type: voucher.discountType,
+        value: voucher.discountValue
+      },
+      validity: {
+        start: voucher.startDate,
+        end: voucher.endDate
+      },
+      redemptions: {
+        max: voucher.maxRedemptions || 'unlimited',
+        current: voucher.currentRedemptions,
+        remaining: voucher.maxRedemptions ? 
+          voucher.maxRedemptions - voucher.currentRedemptions : 
+          'unlimited'
+      }
+    });
+
+    res.json({
+      success: true,
+      data: {
+        business: {
+          id: business._id,
+          email: business.email,
+          name: business.businessName || business.businessProfile?.businessName,
+          logo: business.picUrl || business.businessProfile?.logo
+        },
+        widget: {
+          theme: business.businessProfile?.widgetTheme || 'light',
+          settings: {
+            position: business.businessProfile?.widgetSettings?.position || 'bottom-right',
+            timing: business.businessProfile?.widgetSettings?.timing || 'immediate',
+            animation: business.businessProfile?.widgetSettings?.animation || 'slide',
+            colors: business.businessProfile?.widgetSettings?.colors || {
+              primary: '#4CAF50',
+              secondary: '#2196F3',
+              text: '#000000'
+            },
+            displayRules: business.businessProfile?.widgetSettings?.displayRules || {
+              delay: 0,
+              scrollPercentage: 0,
+              showOnMobile: true,
+              showOnDesktop: true
+            }
+          }
+        },
+        vouchers: {
+          linked: linkedVouchers.map(formatVoucher),
+          unlinked: unlinkedVouchers.map(formatVoucher)
+        },
+        embedCode: generateEmbedCode(business._id), // Helper function to generate embed code
+        previewUrl: `${process.env.WIDGET_URL || 'https://widget.example.com'}/preview/${business._id}`
+      }
+    });
+  } catch (error) {
+    console.error('Get business widget error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch your widget details! 😢'
+    });
+  }
+};
+
+// Helper function to generate embed code 📝
+const generateEmbedCode = (businessId) => {
+  return `<!-- MrIntroduction Widget -->\n<script>\n  (function(w,d,s,o,f,js,fjs){\n    w['MrIntroWidget']=o;\n    w[o]=w[o]||function(){(w[o].q=w[o].q||[]).push(arguments)};\n    js=d.createElement(s),fjs=d.getElementsByTagName(s)[0];\n    js.id='mr-intro-widget';js.src=f;js.async=1;\n    fjs.parentNode.insertBefore(js,fjs);\n  }(window,document,'script','mrintro','https://widget.mrintro.com/widget.js'));\n  \n  mrintro('init', {\n    businessId: '${businessId}',\n    env: '${process.env.NODE_ENV || 'production'}'\n  });\n</script>`;
+};
+
 module.exports = {
   getWidgetConfig,
   claimVoucher,
   getCustomizationOptions,
   updateWidgetAppearance,
   getEmbedCode,
-  // New admin endpoints
+  linkVouchersToWidget,
   manageBusinessWidget,
   getAllBusinessWidgets,
-  getBusinessWidgetDetails
+  getBusinessWidgetDetails,
+  getBusinessOwnWidget
 }; 

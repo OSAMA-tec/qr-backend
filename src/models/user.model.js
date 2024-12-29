@@ -75,6 +75,10 @@ const userSchema = new mongoose.Schema({
         delay: Number,
         scrollPercentage: Number
       },
+      linkedVouchers: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Coupon'
+      }],
       updatedAt: Date
     },
     widgetTheme: {
