@@ -26,7 +26,7 @@ app.use(cookieParser()); // Add cookie parser before CSRF
 
 // CORS configuration 🌐
 app.use(cors({
-  origin: process.env.CLIENT_URL, // Use environment variable
+  origin: 'https://qr-lac-alpha.vercel.app', // Use environment variable
   credentials: true, // Important for cookies
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: [
