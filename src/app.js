@@ -14,6 +14,7 @@ const userRoutes = require('./routes/user.routes');
 const widgetRoutes = require('./routes/widget.routes');
 const voucherRoutes = require('./routes/voucher.routes');
 const qrCodeRoutes = require('./routes/qrCode.routes');
+const campaignRoutes = require('./routes/campaign.routes');
 const { cookieParser, handleCSRFError } = require('./middleware/csrf.middleware');
 
 // Initialize express app 🚀
@@ -23,10 +24,10 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser()); // Add cookie parser before CSRF
-
+// https://qr-lac-alpha.vercel.app
 // CORS configuration 🌐
 app.use(cors({
-  origin: 'https://qr-lac-alpha.vercel.app', // Use environment variable
+  origin: ['http://localhost:5173','https://qr-lac-alpha.vercel.app'], // Use environment variable
   credentials: true, // Important for cookies
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: [
@@ -55,6 +56,7 @@ app.use('/api/user', userRoutes);
 app.use('/api/widget', widgetRoutes);
 app.use('/api/vouchers', voucherRoutes);
 app.use('/api/qr-codes', qrCodeRoutes);
+app.use('/api/campaigns', campaignRoutes);
 
 // Health check route 🏥
 app.get('/', (req, res) => {

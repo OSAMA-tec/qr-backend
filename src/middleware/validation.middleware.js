@@ -776,6 +776,136 @@ const qrCodeScanValidation = [
   handleValidationErrors
 ];
 
+// Campaign creation validation 🎯
+const campaignValidation = [
+  // Basic Info
+  body('name')
+    .trim()
+    .notEmpty().withMessage('Campaign name is required! 📝')
+    .isLength({ min: 3, max: 100 }).withMessage('Name must be between 3 and 100 characters! 📏'),
+  
+  body('type')
+    .isIn(['referral', 'influencer', 'partner']).withMessage('Invalid campaign type! 🚫'),
+  
+  body('description')
+    .optional()
+    .isLength({ max: 500 }).withMessage('Description too long! 📝'),
+  
+  // Dates
+  body('startDate')
+    .notEmpty().withMessage('Start date is required! 📅')
+    .isISO8601().withMessage('Invalid start date format! 📅'),
+  
+  body('endDate')
+    .notEmpty().withMessage('End date is required! 📅')
+    .isISO8601().withMessage('Invalid end date format! 📅')
+    .custom((endDate, { req }) => {
+      if (new Date(endDate) <= new Date(req.body.startDate)) {
+        throw new Error('End date must be after start date! ⚠️');
+      }
+      return true;
+    }),
+  
+  // Influencers
+  body('influencers')
+    .isArray().withMessage('Influencers must be an array! 📋')
+    .notEmpty().withMessage('At least one influencer is required! 👤'),
+  
+  body('influencers.*.name')
+    .trim()
+    .notEmpty().withMessage('Influencer name is required! 👤')
+    .isLength({ min: 2, max: 100 }).withMessage('Influencer name must be between 2 and 100 characters! 📏'),
+  
+  body('influencers.*.type')
+    .isIn(['individual', 'company', 'partner']).withMessage('Invalid influencer type! 🚫'),
+  
+  body('influencers.*.platform')
+    .isIn(['instagram', 'facebook', 'twitter', 'tiktok', 'youtube', 'other'])
+    .withMessage('Invalid platform! 🚫'),
+
+  // Form Config
+  body('formConfig.fields')
+    .optional()
+    .isArray().withMessage('Form fields must be an array! 📋'),
+  
+  body('formConfig.fields.*.name')
+    .optional()
+    .trim()
+    .notEmpty().withMessage('Field name is required! 📝'),
+  
+  body('formConfig.fields.*.type')
+    .optional()
+    .isIn(['text', 'email', 'phone', 'date', 'select', 'checkbox'])
+    .withMessage('Invalid field type! 🚫'),
+
+  // Validation handler
+  (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed! ❌',
+        errors: errors.array()
+      });
+    }
+    next();
+  }
+];
+
+// Campaign form submission validation 📝
+const campaignFormValidation = [
+  body('campaignId')
+    .notEmpty().withMessage('Campaign ID is required! 🆔')
+    .isMongoId().withMessage('Invalid campaign ID! 🚫'),
+  
+  body('referralCode')
+    .notEmpty().withMessage('Referral code is required! 🎫')
+    .isString().withMessage('Invalid referral code! 🚫'),
+  
+  body('formData.firstName')
+    .trim()
+    .notEmpty().withMessage('First name is required! 👤')
+    .isLength({ min: 2, max: 50 }).withMessage('First name must be between 2 and 50 characters! 📏'),
+  
+  body('formData.lastName')
+    .trim()
+    .notEmpty().withMessage('Last name is required! 👤')
+    .isLength({ min: 2, max: 50 }).withMessage('Last name must be between 2 and 50 characters! 📏'),
+  
+  body('formData.email')
+    .trim()
+    .notEmpty().withMessage('Email is required! 📧')
+    .isEmail().withMessage('Invalid email format! 📧')
+    .normalizeEmail(),
+  
+  body('formData.phoneNumber')
+    .optional()
+    .trim()
+    .matches(/^\+?[\d\s-()]{8,20}$/).withMessage('Invalid phone number format! 📱'),
+  
+  body('formData.dateOfBirth')
+    .optional()
+    .isISO8601().withMessage('Invalid date format! 📅'),
+  
+  body('formData.gender')
+    .optional()
+    .isIn(['male', 'female', 'other', 'prefer_not_to_say'])
+    .withMessage('Invalid gender option! 🚫'),
+
+  // Validation handler
+  (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Form validation failed! ❌',
+        errors: errors.array()
+      });
+    }
+    next();
+  }
+];
+
 module.exports = {
   registerValidation,
   loginValidation,
@@ -797,5 +927,7 @@ module.exports = {
   voucherRedemptionValidation,
   qrCodeGenerationValidation,
   bulkQRCodeGenerationValidation,
-  qrCodeScanValidation
+  qrCodeScanValidation,
+  campaignValidation,
+  campaignFormValidation
 }; 
