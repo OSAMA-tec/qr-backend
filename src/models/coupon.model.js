@@ -1,122 +1,141 @@
 // Import dependencies 📦
 const mongoose = require('mongoose');
 
-// Coupon Schema 🎟️
+// Coupon Schema 🎟
 const couponSchema = new mongoose.Schema({
-  // Basic Info
   code: {
     type: String,
-    required: true,
-    unique: true
+    required: [true, 'Voucher code is required! 📝'],
+    trim: true,
+    uppercase: true
   },
   title: {
     type: String,
-    required: true
+    required: [true, 'Voucher title is required! 📌'],
+    trim: true,
+    minlength: [3, 'Title must be at least 3 characters long'],
+    maxlength: [100, 'Title cannot exceed 100 characters']
   },
-  description: String,
-  
-  // Business Info
+  description: {
+    type: String,
+    required: [true, 'Voucher description is required! 📄'],
+    trim: true,
+    maxlength: [500, 'Description cannot exceed 500 characters']
+  },
   businessId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: [true, 'Business reference is required! 🏢']
   },
-
-  // QR Code Info
-  qrCode: {
-    data: String,  // Base64 encoded QR code image
-    url: String,   // URL for the QR code
-    walletPass: {
-      applePass: String,
-      googlePass: String
-    }
+  widgetTemplateId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'WidgetTemplate',
+    required: [true, 'Widget template reference is required! 🎨']
   },
-
-  // Discount Info
   discountType: {
     type: String,
-    enum: ['percentage', 'fixed', 'buyOneGetOne'],
-    required: true
+    enum: {
+      values: ['percentage', 'fixed'],
+      message: 'Invalid discount type! Must be percentage or fixed'
+    },
+    required: [true, 'Discount type is required! 💰']
   },
   discountValue: {
     type: Number,
-    required: true
+    required: [true, 'Discount value is required! 💯'],
+    min: [0, 'Discount value cannot be negative'],
+    validate: {
+      validator: function(v) {
+        return this.discountType !== 'percentage' || v <= 100;
+      },
+      message: 'Percentage discount cannot exceed 100%!'
+    }
   },
-  minimumPurchase: Number,
-  maximumDiscount: Number,
-
-  // Validity
+  minimumPurchase: {
+    type: Number,
+    min: [0, 'Minimum purchase amount cannot be negative'],
+    default: 0
+  },
+  maximumDiscount: {
+    type: Number,
+    min: [0, 'Maximum discount amount cannot be negative']
+  },
   startDate: {
     type: Date,
-    required: true
+    required: [true, 'Start date is required! 📅'],
+    validate: {
+      validator: function(v) {
+        return v >= new Date();
+      },
+      message: 'Start date must be in the future!'
+    }
   },
   endDate: {
     type: Date,
-    required: true
+    required: [true, 'End date is required! 📅'],
+    validate: {
+      validator: function(v) {
+        return v > this.startDate;
+      },
+      message: 'End date must be after start date!'
+    }
   },
   isActive: {
     type: Boolean,
     default: true
   },
-
-  // Usage Limits
   usageLimit: {
-    perCoupon: Number,    // Total times this coupon can be used
-    perCustomer: Number   // Times each customer can use this
+    perCoupon: {
+      type: Number,
+      min: [0, 'Usage limit cannot be negative']
+    },
+    perCustomer: {
+      type: Number,
+      min: [0, 'Per customer limit cannot be negative']
+    }
   },
   currentUsage: {
     type: Number,
     default: 0
   },
-
-  // Campaign Info
-  campaign: {
-    type: String,
-    enum: ['regular', 'birthday', 'anniversary', 'seasonal', 'flash'],
-    default: 'regular'
+  qrCode: {
+    data: String,
+    url: String
   },
-  
-  // Targeting
-  targetAudience: {
-    ageRange: {
-      min: Number,
-      max: Number
-    },
-    location: {
-      type: { type: String },
-      coordinates: [Number]  // [longitude, latitude]
-    },
-    customerType: [{
-      type: String,
-      enum: ['new', 'existing', 'vip']
-    }]
-  },
-
-  // Marketplace Settings
-  marketplace: {
-    isPublic: { type: Boolean, default: false },
-    category: String,
-    tags: [String],
-    featured: { type: Boolean, default: false }
-  },
-
-  // Analytics
   analytics: {
     views: { type: Number, default: 0 },
     clicks: { type: Number, default: 0 },
     redemptions: { type: Number, default: 0 },
     totalRevenue: { type: Number, default: 0 }
-  },
-
-  // Timestamps
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  }
+}, {
+  timestamps: true
 });
 
-// Indexes 📇
-couponSchema.index({ 'targetAudience.location': '2dsphere' });
+// Indexes for faster queries 🔍
+couponSchema.index({ code: 1 }, { unique: true });
 couponSchema.index({ businessId: 1 });
-couponSchema.index({ 'marketplace.isPublic': 1, 'marketplace.category': 1 });
+couponSchema.index({ widgetTemplateId: 1 });
+couponSchema.index({ isActive: 1 });
+couponSchema.index({ startDate: 1, endDate: 1 });
+couponSchema.index({ createdAt: -1 });
+
+// Methods 🛠️
+couponSchema.methods.toJSON = function() {
+  const coupon = this.toObject();
+  delete coupon.__v;
+  return coupon;
+};
+
+// Pre-save middleware to validate dates 📅
+couponSchema.pre('save', function(next) {
+  if (this.isModified('startDate') || this.isModified('endDate')) {
+    if (this.startDate >= this.endDate) {
+      next(new Error('End date must be after start date! ⚠️'));
+    }
+  }
+  next();
+});
 
 // Create model 🏗️
 const Coupon = mongoose.model('Coupon', couponSchema);

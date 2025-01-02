@@ -2,6 +2,7 @@
 const Coupon = require('../models/coupon.model');
 const User = require('../models/user.model');
 const Transaction = require('../models/transaction.model');
+const WidgetTemplate = require('../models/widgetTemplate.model');
 const QRCode = require('qrcode');
 const crypto = require('crypto');
 
@@ -11,18 +12,40 @@ const createVoucher = async (req, res) => {
     const businessId = req.user.userId;
     const voucherData = req.body;
 
-    // Generate unique code if not provided
+    // Check if widget template exists and is active 🎨
+    if (!voucherData.widgetTemplateId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Widget template ID is required! 🎨'
+      });
+    }
+
+    const widgetTemplate = await WidgetTemplate.findOne({
+      _id: voucherData.widgetTemplateId,
+      isActive: true
+    });
+
+    if (!widgetTemplate) {
+      return res.status(404).json({
+        success: false,
+        message: 'Widget template not found or inactive! 🚫'
+      });
+    }
+
+    // Generate unique code if not provided 🎯
     if (!voucherData.code) {
       voucherData.code = crypto.randomBytes(4).toString('hex').toUpperCase();
     }
 
-    // Create QR code
+    // Create QR code with widget template info 📱
     const qrCodeData = await QRCode.toDataURL(JSON.stringify({
       code: voucherData.code,
       businessId,
+      widgetTemplateId: voucherData.widgetTemplateId,
       type: 'voucher'
     }));
 
+    // Create voucher with widget template 🎫
     const voucher = new Coupon({
       ...voucherData,
       businessId,
@@ -32,7 +55,39 @@ const createVoucher = async (req, res) => {
       }
     });
 
+    // Validate dates 📅
+    const now = new Date();
+    if (new Date(voucher.startDate) < now) {
+      return res.status(400).json({
+        success: false,
+        message: 'Start date must be in the future! ⚠️'
+      });
+    }
+
+    if (new Date(voucher.endDate) <= new Date(voucher.startDate)) {
+      return res.status(400).json({
+        success: false,
+        message: 'End date must be after start date! ⚠️'
+      });
+    }
+
+    // Validate discount values 💰
+    if (voucher.discountType === 'percentage' && voucher.discountValue > 100) {
+      return res.status(400).json({
+        success: false,
+        message: 'Percentage discount cannot exceed 100%! 💯'
+      });
+    }
+
     await voucher.save();
+
+    // Populate response with widget template details 🔍
+    await voucher.populate([
+      {
+        path: 'widgetTemplateId',
+        select: 'name category settings'
+      }
+    ]);
 
     res.status(201).json({
       success: true,
@@ -41,6 +96,25 @@ const createVoucher = async (req, res) => {
     });
   } catch (error) {
     console.error('Create voucher error:', error);
+
+    // Handle validation errors ❌
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed! Please check your input. ❌',
+        errors: validationErrors
+      });
+    }
+
+    // Handle duplicate code error
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Voucher code already exists! Please try another code. 🔄'
+      });
+    }
+
     res.status(500).json({
       success: false,
       message: 'Failed to create voucher! 😢'
@@ -56,7 +130,7 @@ const listVouchers = async (req, res) => {
 
     const query = { businessId };
 
-    // Add status filter
+    // Add status filter 🔍
     if (status === 'active') {
       query.isActive = true;
       query.startDate = { $lte: new Date() };
@@ -69,7 +143,7 @@ const listVouchers = async (req, res) => {
       query.startDate = { $gt: new Date() };
     }
 
-    // Add search filter
+    // Add search filter 🔎
     if (search) {
       query.$or = [
         { code: new RegExp(search, 'i') },
@@ -78,21 +152,86 @@ const listVouchers = async (req, res) => {
       ];
     }
 
-    const vouchers = await Coupon.find(query)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
-      .limit(parseInt(limit));
+    // Get vouchers with widget template details 🎫
+    const [voucherResults, totalCount] = await Promise.all([
+      Coupon.find(query)
+        .populate({
+          path: 'widgetTemplateId',
+          select: 'name category settings thumbnail isActive',
+          match: { isActive: true }
+        })
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(parseInt(limit)),
+      Coupon.countDocuments(query)
+    ]);
 
-    const total = await Coupon.countDocuments(query);
+    // Process vouchers to include status and widget info 📊
+    const processedVouchers = voucherResults.map(voucher => {
+      const voucherObj = voucher.toObject();
+      
+      // Calculate voucher status
+      const now = new Date();
+      let status = 'inactive';
+      
+      if (voucher.isActive) {
+        if (now < voucher.startDate) {
+          status = 'scheduled';
+        } else if (now > voucher.endDate) {
+          status = 'expired';
+        } else {
+          status = 'active';
+        }
+      }
+
+      // Add widget template status
+      if (voucherObj.widgetTemplateId) {
+        voucherObj.widgetStatus = {
+          isConnected: true,
+          template: voucherObj.widgetTemplateId
+        };
+      } else {
+        voucherObj.widgetStatus = {
+          isConnected: false,
+          message: 'No widget template connected or template is inactive! 🚫'
+        };
+      }
+
+      // Add usage stats
+      voucherObj.stats = {
+        usagePercentage: voucher.usageLimit?.perCoupon 
+          ? (voucher.currentUsage / voucher.usageLimit.perCoupon) * 100 
+          : 0,
+        remainingUses: voucher.usageLimit?.perCoupon 
+          ? voucher.usageLimit.perCoupon - voucher.currentUsage 
+          : 'unlimited',
+        analytics: voucher.analytics
+      };
+
+      return {
+        ...voucherObj,
+        status,
+        timeRemaining: voucher.endDate > now 
+          ? Math.ceil((voucher.endDate - now) / (1000 * 60 * 60 * 24))
+          : 0
+      };
+    });
 
     res.json({
       success: true,
       data: {
-        vouchers,
+        vouchers: processedVouchers,
         pagination: {
-          total,
+          total: totalCount,
           page: parseInt(page),
-          pages: Math.ceil(total / limit)
+          pages: Math.ceil(totalCount / limit)
+        },
+        summary: {
+          total: totalCount,
+          active: processedVouchers.filter(v => v.status === 'active').length,
+          scheduled: processedVouchers.filter(v => v.status === 'scheduled').length,
+          expired: processedVouchers.filter(v => v.status === 'expired').length,
+          inactive: processedVouchers.filter(v => v.status === 'inactive').length
         }
       }
     });

@@ -533,76 +533,84 @@ const popupPreviewValidation = [
   handleValidationErrors
 ];
 
-// Voucher creation validation rules 🎟️
+// Voucher creation validation 🎫
 const voucherCreationValidation = [
   body('title')
     .trim()
-    .notEmpty()
-    .withMessage('Voucher title is required 📝')
-    .isLength({ min: 3, max: 100 })
-    .withMessage('Title must be between 3 and 100 characters'),
+    .notEmpty().withMessage('Title is required! 📝')
+    .isLength({ min: 3, max: 100 }).withMessage('Title must be between 3 and 100 characters! 📏'),
   
   body('description')
-    .optional()
     .trim()
-    .isLength({ max: 500 })
-    .withMessage('Description cannot exceed 500 characters'),
+    .notEmpty().withMessage('Description is required! 📄')
+    .isLength({ max: 500 }).withMessage('Description cannot exceed 500 characters! 📏'),
+  
+  body('widgetTemplateId')
+    .notEmpty().withMessage('Widget template ID is required! 🎨')
+    .isMongoId().withMessage('Invalid widget template ID format! ❌'),
   
   body('discountType')
-    .isIn(['percentage', 'fixed'])
-    .withMessage('Invalid discount type 🏷️'),
+    .notEmpty().withMessage('Discount type is required! 💰')
+    .isIn(['percentage', 'fixed']).withMessage('Invalid discount type! Must be percentage or fixed'),
   
   body('discountValue')
-    .isFloat({ min: 0 })
-    .withMessage('Discount value must be a positive number 💰')
+    .notEmpty().withMessage('Discount value is required! 💯')
+    .isFloat({ min: 0 }).withMessage('Discount value must be a positive number! 📈')
     .custom((value, { req }) => {
       if (req.body.discountType === 'percentage' && value > 100) {
-        throw new Error('Percentage discount cannot exceed 100% 📊');
+        throw new Error('Percentage discount cannot exceed 100%! 💯');
       }
       return true;
     }),
   
+  body('minimumPurchase')
+    .optional()
+    .isFloat({ min: 0 }).withMessage('Minimum purchase must be a positive number! 💰'),
+  
+  body('maximumDiscount')
+    .optional()
+    .isFloat({ min: 0 }).withMessage('Maximum discount must be a positive number! 💰'),
+  
   body('startDate')
-    .isISO8601()
-    .withMessage('Invalid start date format 📅')
-    .custom((value) => {
+    .notEmpty().withMessage('Start date is required! 📅')
+    .isISO8601().withMessage('Invalid start date format! Use ISO format')
+    .custom(value => {
       if (new Date(value) < new Date()) {
-        throw new Error('Start date cannot be in the past ⏰');
+        throw new Error('Start date must be in the future! ⚠️');
       }
       return true;
     }),
   
   body('endDate')
-    .isISO8601()
-    .withMessage('Invalid end date format 📅')
+    .notEmpty().withMessage('End date is required! 📅')
+    .isISO8601().withMessage('Invalid end date format! Use ISO format')
     .custom((value, { req }) => {
       if (new Date(value) <= new Date(req.body.startDate)) {
-        throw new Error('End date must be after start date ⏰');
+        throw new Error('End date must be after start date! ⚠️');
       }
       return true;
     }),
   
   body('usageLimit.perCoupon')
     .optional()
-    .isInt({ min: 1 })
-    .withMessage('Usage limit per coupon must be at least 1 🎯'),
+    .isInt({ min: 1 }).withMessage('Per coupon limit must be at least 1! 🎯'),
   
   body('usageLimit.perCustomer')
     .optional()
-    .isInt({ min: 1 })
-    .withMessage('Usage limit per customer must be at least 1 👤'),
-  
-  body('minimumPurchase')
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage('Minimum purchase amount must be a positive number 💰'),
-  
-  body('maximumDiscount')
-    .optional()
-    .isFloat({ min: 0 })
-    .withMessage('Maximum discount must be a positive number 💰'),
-  
-  handleValidationErrors
+    .isInt({ min: 1 }).withMessage('Per customer limit must be at least 1! 👤'),
+
+  // Handle validation results
+  (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed! Please check your input. ❌',
+        errors: errors.array().map(err => err.msg)
+      });
+    }
+    next();
+  }
 ];
 
 // Voucher update validation rules ✏️

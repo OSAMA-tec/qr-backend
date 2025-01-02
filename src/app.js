@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const http = require('http'); // Add http for socket.io
 require('dotenv').config();
 
 // Import routes and middleware 🛣️
@@ -20,30 +21,47 @@ const { cookieParser, handleCSRFError } = require('./middleware/csrf.middleware'
 // Initialize express app 🚀
 const app = express();
 
+// Create HTTP server 🌐
+const server = http.createServer(app);
+
+// Socket.io setup 🔌
+const socketIO = require('socket.io');
+const { socketMiddleware, socketErrorHandler } = require('./socket/middleware.socket');
+const chatSocketHandler = require('./socket/chat.socket');
+
+// Create socket server
+const io = socketIO(server, {
+  cors: {
+    origin: ['http://localhost:5173','https://qr-lac-alpha.vercel.app'], // Match your CORS settings
+    methods: ['GET', 'POST'],
+    credentials: true
+  }
+});
+
 // Middleware 🛠️
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser()); // Add cookie parser before CSRF
-// https://qr-lac-alpha.vercel.app
+app.use(cookieParser());
+
 // CORS configuration 🌐
 app.use(cors({
-  origin: ['http://localhost:5173','https://qr-lac-alpha.vercel.app'], // Use environment variable
-  credentials: true, // Important for cookies
+  origin: ['http://localhost:5173','https://qr-lac-alpha.vercel.app'],
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: [
     'Content-Type',
     'Authorization',
-    'X-XSRF-TOKEN',     // Match frontend header
-    'X-CSRF-Token',     // Alternative name
-    'CSRF-Token'        // Another alternative
+    'X-XSRF-TOKEN',
+    'X-CSRF-Token',
+    'CSRF-Token'
   ],
-  exposedHeaders: ['X-XSRF-TOKEN', 'X-CSRF-Token', 'CSRF-Token'] // Expose all possible CSRF headers
+  exposedHeaders: ['X-XSRF-TOKEN', 'X-CSRF-Token', 'CSRF-Token']
 }));
 
 // Security headers 🔒
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }, // Allow cross-origin resource sharing
-  crossOriginEmbedderPolicy: false // Allow embedding in iframes (for widget)
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginEmbedderPolicy: false
 }));
 
 app.use(morgan('dev'));
@@ -76,4 +94,17 @@ app.use((err, req, res, next) => {
   });
 });
 
-module.exports = app;
+// Apply socket middleware
+io.use(socketMiddleware);
+
+// Handle socket errors
+socketErrorHandler(io);
+
+// Handle chat sockets
+io.on('connection', (socket) => {
+  console.log('New socket connection:', socket.user.userId);
+  chatSocketHandler(io, socket);
+});
+
+// Export both app and server 📤
+module.exports = { app, server };

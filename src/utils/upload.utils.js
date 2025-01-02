@@ -23,12 +23,12 @@ const upload = multer({
 });
 
 // Upload to Firebase Storage 🔥
-const uploadToFirebase = async (file, userId) => {
+const uploadToFirebase = async (file, folder = 'profile_pics') => {
   try {
     // Create unique filename
     const timestamp = Date.now();
-    const filename = `${userId}_${timestamp}_${file.originalname}`;
-    const fileUpload = bucket.file(`profile_pics/${filename}`);
+    const filename = `${timestamp}_${file.originalname}`;
+    const fileUpload = bucket.file(`${folder}/${filename}`);
 
     // Create write stream
     const blobStream = fileUpload.createWriteStream({
@@ -48,7 +48,7 @@ const uploadToFirebase = async (file, userId) => {
         await fileUpload.makePublic();
         
         // Get public URL
-        const publicUrl = `https://storage.googleapis.com/${bucket.name}/profile_pics/${filename}`;
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${folder}/${filename}`;
         resolve(publicUrl);
       });
 
@@ -59,7 +59,17 @@ const uploadToFirebase = async (file, userId) => {
   }
 };
 
+// Upload widget template thumbnail 🎨
+const uploadTemplateThumbnail = async (file) => {
+  try {
+    return await uploadToFirebase(file, 'widget-templates');
+  } catch (error) {
+    throw new Error(`Failed to upload template thumbnail! 😢 ${error.message}`);
+  }
+};
+
 module.exports = {
   upload,
   uploadToFirebase,
+  uploadTemplateThumbnail
 }; 

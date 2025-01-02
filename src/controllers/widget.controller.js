@@ -2,6 +2,8 @@
 const User = require('../models/user.model');
 const Coupon = require('../models/coupon.model');
 const { uploadToFirebase } = require('../utils/upload.utils');
+const WidgetTemplate = require('../models/widgetTemplate.model');
+const { uploadTemplateThumbnail } = require('../utils/upload.utils');
 
 // Get widget configuration 🔧
 const getWidgetConfig = async (req, res) => {
@@ -891,6 +893,288 @@ const generateEmbedCode = (businessId) => {
   return `<!-- MrIntroduction Widget -->\n<script>\n  (function(w,d,s,o,f,js,fjs){\n    w['MrIntroWidget']=o;\n    w[o]=w[o]||function(){(w[o].q=w[o].q||[]).push(arguments)};\n    js=d.createElement(s),fjs=d.getElementsByTagName(s)[0];\n    js.id='mr-intro-widget';js.src=f;js.async=1;\n    fjs.parentNode.insertBefore(js,fjs);\n  }(window,document,'script','mrintro','https://widget.mrintro.com/widget.js'));\n  \n  mrintro('init', {\n    businessId: '${businessId}',\n    env: '${process.env.NODE_ENV || 'production'}'\n  });\n</script>`;
 };
 
+// Admin: Create widget template 🎨
+const createTemplate = async (req, res) => {
+  try {
+    const {
+      name,
+      description,
+      category,
+      settings
+    } = req.body;
+
+    // Validate user exists in request
+    if (!req.user || !req.user.userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required! Please log in again. 🔒'
+      });
+    }
+
+    // Handle thumbnail upload 🖼️
+    let thumbnailUrl;
+    if (req.file) {
+      try {
+        thumbnailUrl = await uploadTemplateThumbnail(req.file);
+      } catch (uploadError) {
+        console.error('Thumbnail upload error:', uploadError);
+        return res.status(400).json({
+          success: false,
+          message: 'Failed to upload thumbnail! Please try again. 🖼️'
+        });
+      }
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'Thumbnail image is required! 🖼️'
+      });
+    }
+
+    // Validate and parse settings
+    let parsedSettings;
+    try {
+      parsedSettings = settings ? JSON.parse(settings) : {};
+    } catch (parseError) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid settings format! Please provide valid JSON. ⚙️'
+      });
+    }
+
+    // Create template with validated data
+    const template = new WidgetTemplate({
+      name,
+      description,
+      category,
+      thumbnail: thumbnailUrl,
+      createdBy: req.user.userId,
+      settings: parsedSettings
+    });
+
+    // Save with validation
+    await template.save();
+
+    // Populate creator details for response
+    await template.populate('createdBy', 'firstName lastName');
+
+    res.status(201).json({
+      success: true,
+      message: 'Widget template created successfully! 🎉',
+      data: template
+    });
+  } catch (error) {
+    console.error('Create template error:', error);
+    
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed! Please check your input. ❌',
+        errors: validationErrors
+      });
+    }
+
+    // Handle other errors
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to create widget template! 😢'
+    });
+  }
+};
+
+// Admin: Update widget template 🔄
+const updateTemplate = async (req, res) => {
+  try {
+    const {
+      name,
+      description,
+      category,
+      isActive,
+      settings
+    } = req.body;
+
+    const template = await WidgetTemplate.findById(req.params.id);
+    if (!template) {
+      return res.status(404).json({
+        success: false,
+        message: 'Template not found! 🔍'
+      });
+    }
+
+    // Handle thumbnail update if provided
+    if (req.file) {
+      template.thumbnail = await uploadTemplateThumbnail(req.file);
+    }
+
+    // Update fields
+    template.name = name || template.name;
+    template.description = description || template.description;
+    template.category = category || template.category;
+    template.isActive = isActive !== undefined ? isActive === 'true' : template.isActive;
+    template.settings = settings ? JSON.parse(settings) : template.settings;
+
+    await template.save();
+
+    res.json({
+      success: true,
+      message: 'Widget template updated successfully! ✨',
+      data: template
+    });
+  } catch (error) {
+    console.error('Update template error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update widget template! 😢'
+    });
+  }
+};
+
+// Admin: Delete widget template 🗑️
+const deleteTemplate = async (req, res) => {
+  try {
+    const template = await WidgetTemplate.findById(req.params.id);
+    if (!template) {
+      return res.status(404).json({
+        success: false,
+        message: 'Template not found! 🔍'
+      });
+    }
+
+    // TODO: Delete thumbnail from Firebase storage if needed
+    await template.deleteOne();
+
+    res.json({
+      success: true,
+      message: 'Widget template deleted successfully! 🗑️'
+    });
+  } catch (error) {
+    console.error('Delete template error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete widget template! 😢'
+    });
+  }
+};
+
+// Admin: Get all templates with filters 📋
+const getAllTemplates = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      category,
+      search,
+      isActive
+    } = req.query;
+
+    const query = {};
+    
+    if (category) query.category = category;
+    if (isActive !== undefined) query.isActive = isActive === 'true';
+    if (search) {
+      query.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { description: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const [templates, total] = await Promise.all([
+      WidgetTemplate.find(query)
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit)
+        .populate('createdBy', 'firstName lastName'),
+      WidgetTemplate.countDocuments(query)
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        templates,
+        pagination: {
+          total,
+          page: parseInt(page),
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get templates error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch widget templates! 😢'
+    });
+  }
+};
+
+// Get single template details 🔍
+const getTemplateById = async (req, res) => {
+  try {
+    const template = await WidgetTemplate.findById(req.params.id)
+      .populate('createdBy', 'firstName lastName');
+
+    if (!template) {
+      return res.status(404).json({
+        success: false,
+        message: 'Template not found! 🔍'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: template
+    });
+  } catch (error) {
+    console.error('Get template error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch widget template! 😢'
+    });
+  }
+};
+
+// Business: Get active templates 🎯
+const getActiveTemplates = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      category
+    } = req.query;
+
+    const query = { isActive: true };
+    if (category) query.category = category;
+
+    const [templates, total] = await Promise.all([
+      WidgetTemplate.find(query)
+        .select('-createdBy')
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(limit),
+      WidgetTemplate.countDocuments(query)
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        templates,
+        pagination: {
+          total,
+          page: parseInt(page),
+          pages: Math.ceil(total / limit)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get active templates error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch active templates! 😢'
+    });
+  }
+};
+
 module.exports = {
   getWidgetConfig,
   claimVoucher,
@@ -901,5 +1185,11 @@ module.exports = {
   manageBusinessWidget,
   getAllBusinessWidgets,
   getBusinessWidgetDetails,
-  getBusinessOwnWidget
+  getBusinessOwnWidget,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate,
+  getAllTemplates,
+  getTemplateById,
+  getActiveTemplates
 }; 

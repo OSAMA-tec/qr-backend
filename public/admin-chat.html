@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Chat Dashboard 👨‍💼</title>
+    <style>
+        /* Simple and clean design 🎨 */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            max-width: 1200px;
+            margin: 0 auto;
+            height: 80vh;
+        }
+        .conversations-list {
+            flex: 1;
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            overflow-y: auto;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .chat-window {
+            flex: 2;
+            background: white;
+            border-radius: 8px;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .conversation-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+        .conversation-item:hover {
+            background: #f9f9f9;
+        }
+        .conversation-item.active {
+            background: #e3f2fd;
+        }
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 8px 12px;
+            border-radius: 8px;
+            max-width: 70%;
+        }
+        .message.received {
+            background: #e3f2fd;
+            margin-right: auto;
+        }
+        .message.sent {
+            background: #e8f5e9;
+            margin-left: auto;
+        }
+        .chat-input {
+            display: flex;
+            gap: 10px;
+        }
+        input, button {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        input {
+            flex: 1;
+        }
+        button {
+            background: #2196f3;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #1976d2;
+        }
+        .status {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .unread-badge {
+            background: #f44336;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-size: 12px;
+            float: right;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Conversations List 📋 -->
+        <div class="conversations-list">
+            <h2>Conversations 💬</h2>
+            <div id="conversations"></div>
+        </div>
+
+        <!-- Chat Window 💭 -->
+        <div class="chat-window">
+            <h2 id="currentChat">Select a conversation</h2>
+            <div class="chat-messages" id="messages"></div>
+            <div class="status" id="typingStatus"></div>
+            <div class="chat-input">
+                <input type="text" id="messageInput" placeholder="Type your message..." disabled>
+                <button id="sendButton" disabled>Send 📤</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Socket.IO Client 🔌 -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script>
+        // Initialize variables 🎯
+        let socket;
+        let currentConversation = null;
+        const token = localStorage.getItem('token'); // Get from your auth system
+
+        // Connect to socket 🔌
+        function connectSocket() {
+            socket = io('http://localhost:3000', {
+                auth: { token }
+            });
+
+            // Connection events 🎯
+            socket.on('connect', () => {
+                console.log('Connected to socket! 🟢');
+                loadConversations();
+            });
+
+            // Handle incoming messages 📨
+            socket.on('message:received', (data) => {
+                if (currentConversation === data.conversation) {
+                    appendMessage(data.message, 'received');
+                }
+                loadConversations(); // Refresh list
+            });
+
+            // Handle typing status 📝
+            socket.on('user:typing', (data) => {
+                if (currentConversation === data.conversationId) {
+                    document.getElementById('typingStatus').textContent = 'User is typing...';
+                }
+            });
+
+            socket.on('user:stopped_typing', (data) => {
+                if (currentConversation === data.conversationId) {
+                    document.getElementById('typingStatus').textContent = '';
+                }
+            });
+        }
+
+        // Load conversations 📋
+        async function loadConversations() {
+            try {
+                const response = await fetch('http://localhost:3000/api/admin/conversations', {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                const data = await response.json();
+                
+                const conversationsDiv = document.getElementById('conversations');
+                conversationsDiv.innerHTML = data.data.conversations.map(conv => `
+                    <div class="conversation-item ${conv.id === currentConversation ? 'active' : ''}" 
+                         onclick="selectConversation('${conv.id}')">
+                        <strong>${conv.subject}</strong>
+                        ${conv.unreadCount ? `<span class="unread-badge">${conv.unreadCount}</span>` : ''}
+                        <div class="status">
+                            Status: ${conv.status} • ${new Date(conv.updatedAt).toLocaleString()}
+                        </div>
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Error loading conversations:', error);
+            }
+        }
+
+        // Select conversation 💬
+        async function selectConversation(id) {
+            currentConversation = id;
+            document.getElementById('messageInput').disabled = false;
+            document.getElementById('sendButton').disabled = false;
+            
+            // Join socket room
+            socket.emit('conversation:join', id);
+            
+            try {
+                // Load conversation details
+                const response = await fetch(`http://localhost:3000/api/admin/conversations/${id}`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                const data = await response.json();
+                
+                document.getElementById('currentChat').textContent = data.data.subject;
+                
+                // Load messages
+                const messagesResponse = await fetch(
+                    `http://localhost:3000/api/admin/conversations/${id}/messages`,
+                    { headers: { Authorization: `Bearer ${token}` } }
+                );
+                const messagesData = await messagesResponse.json();
+                
+                const messagesDiv = document.getElementById('messages');
+                messagesDiv.innerHTML = messagesData.data.messages.map(msg => `
+                    <div class="message ${msg.sender.role === 'admin' ? 'sent' : 'received'}">
+                        ${msg.content.text}
+                        <div class="status">${new Date(msg.createdAt).toLocaleString()}</div>
+                    </div>
+                `).join('');
+                
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                
+                // Mark as read
+                fetch(`http://localhost:3000/api/admin/conversations/${id}/read`, {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                
+                loadConversations(); // Refresh list
+            } catch (error) {
+                console.error('Error loading conversation:', error);
+            }
+        }
+
+        // Send message 📤
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (message && currentConversation) {
+                socket.emit('message:send', {
+                    conversationId: currentConversation,
+                    content: { text: message }
+                });
+                
+                appendMessage({ content: { text: message }, createdAt: new Date() }, 'sent');
+                input.value = '';
+            }
+        }
+
+        // Append message to chat 📝
+        function appendMessage(message, type) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.innerHTML = `
+                ${message.content.text}
+                <div class="status">${new Date(message.createdAt).toLocaleString()}</div>
+            `;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Event listeners 👂
+        document.getElementById('sendButton').addEventListener('click', sendMessage);
+        document.getElementById('messageInput').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+
+        // Initialize socket connection 🚀
+        connectSocket();
+    </script>
+</body>
+</html> 

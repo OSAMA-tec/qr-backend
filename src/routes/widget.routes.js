@@ -1,77 +1,82 @@
 // Import dependencies 📦
 const router = require('express').Router();
+const authMiddleware = require('../middleware/auth.middleware');
+const { csrfProtection } = require('../middleware/csrf.middleware');
+const { upload } = require('../utils/upload.utils');
 const {
   getWidgetConfig,
   claimVoucher,
   getCustomizationOptions,
   updateWidgetAppearance,
   getEmbedCode,
-  manageBusinessWidget,
   getAllBusinessWidgets,
   getBusinessWidgetDetails,
-  linkVouchersToWidget,
-  getBusinessOwnWidget
+  getBusinessOwnWidget,
+  createTemplate,
+  updateTemplate,
+  deleteTemplate,
+  getAllTemplates,
+  getTemplateById,
+  getActiveTemplates
 } = require('../controllers/widget.controller');
 
-const {
-  widgetCustomizationValidation,
-  voucherClaimValidation
-} = require('../middleware/validation.middleware');
-
-const authMiddleware = require('../middleware/auth.middleware');
-const { csrfProtection } = require('../middleware/csrf.middleware');
-const { upload } = require('../utils/upload.utils');
-
-// Custom middleware to check if user is business 🏢
-const isBusinessMiddleware = (req, res, next) => {
-  if (req.user.role !== 'business') {
-    return res.status(403).json({
-      success: false,
-      message: 'Access denied! Only business accounts can access this resource 🚫'
-    });
-  }
-  next();
-};
-
-// Custom middleware to check if user is admin 👑
-const isAdminMiddleware = (req, res, next) => {
+// Middleware to check roles 🔒
+const isAdmin = (req, res, next) => {
   if (req.user.role !== 'admin') {
     return res.status(403).json({
       success: false,
-      message: 'Access denied! Only admins can access this resource 🚫'
+      message: 'Access denied! Admin only resource 🚫'
     });
   }
   next();
 };
 
-// Public widget routes 🌐
-router.get('/:businessId/config', getWidgetConfig);  // Get widget configuration
-router.post('/claim-voucher', csrfProtection, voucherClaimValidation, claimVoucher);  // Claim voucher as guest
+const isBusiness = (req, res, next) => {
+  if (req.user.role !== 'business') {
+    return res.status(403).json({
+      success: false,
+      message: 'Access denied! Business only resource 🚫'
+    });
+  }
+  next();
+};
 
-// Admin routes for managing business widgets 👑
-router.get('/admin/businesses', authMiddleware, isAdminMiddleware, getAllBusinessWidgets);  // List all business widgets
-router.get('/admin/businesses/:businessId', authMiddleware, isAdminMiddleware, getBusinessWidgetDetails);  // Get specific widget details
-router.put(
-  '/admin/businesses/:businessId',
-  authMiddleware,
-  isAdminMiddleware,
+// Public routes 🌐
+router.get('/:businessId/config', getWidgetConfig);
+router.post('/claim-voucher', csrfProtection, claimVoucher);
+
+// Business routes 💼
+router.use('/business', authMiddleware, isBusiness);
+router.get('/business/customize', getCustomizationOptions);
+router.put('/business/customize', csrfProtection, updateWidgetAppearance);
+router.get('/business/embed-code', getEmbedCode);
+router.get('/business/widget', getBusinessOwnWidget);
+
+// Template routes for business 🎨
+router.get('/business/templates', getActiveTemplates);
+router.get('/business/templates/:id', getTemplateById);
+
+// Admin routes 👑
+router.use('/admin', authMiddleware, isAdmin);
+router.get('/admin/businesses', getAllBusinessWidgets);
+router.get('/admin/businesses/:businessId', getBusinessWidgetDetails);
+
+// Template management routes for admin 🎨
+router.post('/admin/templates', 
+  csrfProtection, 
+  upload.single('thumbnail'), // Add multer middleware for thumbnail
+  createTemplate
+);
+
+router.get('/admin/templates', getAllTemplates);
+router.get('/admin/templates/:id', getTemplateById);
+
+router.put('/admin/templates/:id', 
   csrfProtection,
-  upload.single('logo'),
-  widgetCustomizationValidation,
-  manageBusinessWidget
-);  // Update business widget
+  upload.single('thumbnail'), // Add multer middleware for thumbnail updates
+  updateTemplate
+);
 
-// Protected business routes 🔒
-router.use(authMiddleware);
-router.use(isBusinessMiddleware);
-
-// Widget management routes
-router.get('/my-widget', getBusinessOwnWidget);  // 🆕 Get business's own widget with vouchers
-router.get('/customize', getCustomizationOptions);
-router.put('/customize', csrfProtection, widgetCustomizationValidation, updateWidgetAppearance);
-router.get('/embed-code', getEmbedCode);
-
-// Voucher linking route 🔗
-router.put('/vouchers', csrfProtection, linkVouchersToWidget);
+router.delete('/admin/templates/:id', csrfProtection, deleteTemplate);
 
 module.exports = router; 
