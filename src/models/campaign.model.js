@@ -1,193 +1,203 @@
 // Import dependencies 📦
 const mongoose = require('mongoose');
-
-// Campaign Analytics Schema 📊
-const analyticsSchema = new mongoose.Schema({
-  totalClicks: { type: Number, default: 0 },
-  uniqueClicks: { type: Number, default: 0 },
-  formViews: { type: Number, default: 0 },
-  formSubmissions: { type: Number, default: 0 },
-  conversionRate: { type: Number, default: 0 },
-  bounceRate: { type: Number, default: 0 },
-  averageFormFillTime: { type: Number, default: 0 }, // in seconds
-  deviceStats: {
-    desktop: { type: Number, default: 0 },
-    mobile: { type: Number, default: 0 },
-    tablet: { type: Number, default: 0 }
-  },
-  browserStats: {
-    type: Map,
-    of: Number,
-    default: {}
-  },
-  locationStats: {
-    type: Map,
-    of: Number,
-    default: {}
-  },
-  timeStats: {
-    hourly: [Number], // 24 slots for each hour
-    daily: [Number],  // 7 slots for each day of week
-    monthly: [Number] // 12 slots for each month
-  }
-});
+const crypto = require('crypto');
 
 // Campaign Schema 🎯
 const campaignSchema = new mongoose.Schema({
-  // Basic Info
+  name: {
+    type: String,
+    required: [true, 'Campaign name is required! 📝'],
+    trim: true,
+    minlength: [3, 'Name must be at least 3 characters long'],
+    maxlength: [100, 'Name cannot exceed 100 characters']
+  },
+  description: {
+    type: String,
+    required: [true, 'Campaign description is required! 📄'],
+    trim: true,
+    maxlength: [500, 'Description cannot exceed 500 characters']
+  },
   businessId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: [true, 'Business reference is required! 🏢']
   },
-  name: {
-    type: String,
-    required: true,
-    trim: true
+  voucherId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Coupon',
+    required: [true, 'Voucher reference is required! 🎫']
   },
   type: {
     type: String,
-    enum: ['referral', 'influencer', 'partner'],
-    required: true
+    enum: {
+      values: ['referral', 'influencer', 'partner'],
+      message: 'Invalid campaign type! Must be: referral, influencer, or partner'
+    },
+    required: [true, 'Campaign type is required! 📊']
   },
   status: {
     type: String,
-    enum: ['draft', 'active', 'paused', 'completed'],
+    enum: {
+      values: ['draft', 'active', 'paused', 'completed', 'cancelled'],
+      message: 'Invalid campaign status!'
+    },
     default: 'draft'
   },
-
-  // Campaign Details
-  description: String,
   startDate: {
     type: Date,
-    required: true
+    required: [true, 'Start date is required! 📅'],
+    validate: {
+      validator: function(v) {
+        return v >= new Date();
+      },
+      message: 'Start date must be in the future!'
+    }
   },
   endDate: {
     type: Date,
-    required: true
+    required: [true, 'End date is required! 📅'],
+    validate: {
+      validator: function(v) {
+        return v > this.startDate;
+      },
+      message: 'End date must be after start date!'
+    }
   },
-
-  // Referral Links
-  referralLinks: [{
-    code: {
+  influencers: [{
+    name: {
       type: String,
-      required: true
+      required: [true, 'Influencer name is required! 👤'],
+      trim: true
     },
-    influencerId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User'
-    },
-    influencerName: String,
-    influencerType: {
+    type: {
       type: String,
-      enum: ['individual', 'company', 'partner'],
-      required: true
+      enum: {
+        values: ['individual', 'company', 'partner'],
+        message: 'Invalid influencer type!'
+      }
     },
     platform: {
       type: String,
-      enum: ['instagram', 'facebook', 'twitter', 'tiktok', 'youtube', 'other'],
-      required: true
+      enum: {
+        values: ['instagram', 'facebook', 'twitter', 'tiktok', 'youtube', 'other'],
+        message: 'Invalid platform!'
+      }
     },
-    analytics: analyticsSchema,
-    customFields: {
-      type: Map,
-      of: String
+    referralCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true
     },
-    isActive: {
-      type: Boolean,
-      default: true
-    },
-    createdAt: {
-      type: Date,
-      default: Date.now
+    stats: {
+      clicks: { type: Number, default: 0 },
+      conversions: { type: Number, default: 0 },
+      revenue: { type: Number, default: 0 }
     }
   }],
-
-  // Form Configuration
   formConfig: {
     fields: [{
-      _id: false, // Disable automatic _id generation
       name: String,
-      label: String,
       type: {
         type: String,
-        enum: ['text', 'email', 'phone', 'date', 'select', 'checkbox'],
-        required: true
+        enum: ['text', 'email', 'phone', 'date', 'select', 'checkbox']
       },
-      isRequired: {
-        type: Boolean,
-        default: false
-      },
-      options: [String], // For select fields
-      validation: {
-        pattern: String,
-        message: String
-      }
-    }],
-    theme: {
-      primaryColor: String,
-      secondaryColor: String,
-      backgroundColor: String,
-      textColor: String
+      required: Boolean,
+      options: [String] // For select fields
+    }]
+  },
+  analytics: {
+    totalClicks: { type: Number, default: 0 },
+    uniqueClicks: { type: Number, default: 0 },
+    conversions: { type: Number, default: 0 },
+    revenue: { type: Number, default: 0 },
+    conversionRate: { type: Number, default: 0 },
+    avgOrderValue: { type: Number, default: 0 }
+  },
+  budget: {
+    total: Number,
+    spent: { type: Number, default: 0 },
+    remaining: { type: Number, default: 0 }
+  },
+  targeting: {
+    ageRange: {
+      min: { type: Number, min: 0, max: 100 },
+      max: { type: Number, min: 0, max: 100 }
     },
-    redirectUrl: String,
-    successMessage: String
-  },
-
-  // Campaign Analytics
-  analytics: analyticsSchema,
-
-  // Timestamps
-  createdAt: {
-    type: Date,
-    default: Date.now
-  },
-  updatedAt: {
-    type: Date,
-    default: Date.now
+    gender: [{
+      type: String,
+      enum: ['male', 'female', 'other']
+    }],
+    locations: [{
+      type: String,
+      trim: true
+    }],
+    interests: [String]
   }
+}, {
+  timestamps: true
 });
 
-// Indexes 📇
-campaignSchema.index({ businessId: 1, status: 1 });
-campaignSchema.index({ 'referralLinks.code': 1 }); // Unique index for referral codes
+// Indexes for faster queries 🔍
+campaignSchema.index({ businessId: 1 });
+campaignSchema.index({ voucherId: 1 });
+campaignSchema.index({ status: 1 });
 campaignSchema.index({ startDate: 1, endDate: 1 });
+campaignSchema.index({ createdAt: -1 });
 
-// Pre-save middleware to update timestamps ⏰
+// Methods 🛠️
+campaignSchema.methods.toJSON = function() {
+  const campaign = this.toObject();
+  delete campaign.__v;
+  return campaign;
+};
+
+// Pre-save middleware to validate dates and update budget 📅
 campaignSchema.pre('save', function(next) {
-  this.updatedAt = new Date();
+  // Validate dates
+  if (this.isModified('startDate') || this.isModified('endDate')) {
+    if (this.startDate >= this.endDate) {
+      next(new Error('End date must be after start date! ⚠️'));
+    }
+  }
+
+  // Update budget remaining
+  if (this.isModified('budget.total') || this.isModified('budget.spent')) {
+    this.budget.remaining = this.budget.total - this.budget.spent;
+  }
+
+  // Update conversion rate
+  if (this.isModified('analytics.conversions') || this.isModified('analytics.uniqueClicks')) {
+    if (this.analytics.uniqueClicks > 0) {
+      this.analytics.conversionRate = (this.analytics.conversions / this.analytics.uniqueClicks) * 100;
+    }
+  }
+
+  // Update average order value
+  if (this.isModified('analytics.revenue') || this.isModified('analytics.conversions')) {
+    if (this.analytics.conversions > 0) {
+      this.analytics.avgOrderValue = this.analytics.revenue / this.analytics.conversions;
+    }
+  }
+
   next();
 });
 
-// Pre-save middleware to ensure unique referral codes 🎫
+// Pre-save middleware to generate referral codes 🎫
 campaignSchema.pre('save', async function(next) {
-  // Only check for duplicates if referral links are modified
-  if (!this.isModified('referralLinks')) {
-    return next();
-  }
-
-  // Get all referral codes in this document
-  const codes = this.referralLinks.map(link => link.code);
-  
-  // Check for duplicates within the document
-  const uniqueCodes = new Set(codes);
-  if (uniqueCodes.size !== codes.length) {
-    return next(new Error('Duplicate referral codes are not allowed within a campaign! 🚫'));
-  }
-
-  // Check for duplicates in other documents
-  const Campaign = this.constructor;
-  for (const code of codes) {
-    const existingCampaign = await Campaign.findOne({
-      '_id': { $ne: this._id }, // Exclude current document
-      'referralLinks.code': code
-    });
-
-    if (existingCampaign) {
-      return next(new Error(`Referral code ${code} is already in use! 🚫`));
+  if (this.isModified('influencers')) {
+    for (const influencer of this.influencers) {
+      if (!influencer.referralCode) {
+        // Generate unique referral code
+        const prefix = influencer.name.substring(0, 3).toUpperCase();
+        const hash = crypto.createHash('md5')
+          .update(this._id + influencer.name + Date.now())
+          .digest('hex')
+          .substring(0, 6);
+        influencer.referralCode = `${prefix}-${hash}`;
+      }
     }
   }
-
   next();
 });
 

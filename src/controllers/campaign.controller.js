@@ -5,6 +5,8 @@ const User = require('../models/user.model');
 const crypto = require('crypto');
 const { detectDevice, parseUserAgent } = require('../utils/device.utils');
 const { getLocationFromIP } = require('../utils/location.utils');
+const Coupon = require('../models/coupon.model');
+const mongoose = require('mongoose');
 
 // Helper: Generate unique referral code 🎫
 const generateReferralCode = (campaignId, influencerName) => {
@@ -20,91 +22,124 @@ const generateReferralCode = (campaignId, influencerName) => {
 const createCampaign = async (req, res) => {
   try {
     const businessId = req.user.userId;
-    const {
-      name,
-      type,
-      description,
-      startDate,
-      endDate,
-      formConfig,
-      influencers
-    } = req.body;
+    const campaignData = req.body;
 
-    // Validate dates
-    if (new Date(startDate) >= new Date(endDate)) {
+    // Validate voucher exists and belongs to business 🎫
+    if (!campaignData.voucherId) {
       return res.status(400).json({
         success: false,
-        message: 'End date must be after start date! 📅'
+        message: 'Voucher ID is required! 🎫'
       });
     }
 
-    // Create referral links for influencers
-    const referralLinks = influencers.map(influencer => ({
-      code: generateReferralCode(name, influencer.name),
-      influencerName: influencer.name,
-      influencerType: influencer.type,
-      platform: influencer.platform,
-      customFields: influencer.customFields || {},
-      analytics: {
-        totalClicks: 0,
-        uniqueClicks: 0,
-        formViews: 0,
-        formSubmissions: 0
-      }
-    }));
+    // Validate voucherId format
+    if (!mongoose.Types.ObjectId.isValid(campaignData.voucherId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid voucher ID format! Please provide a valid ID. 🚫'
+      });
+    }
 
-    // Process form fields to remove any empty IDs
-    const processedFormConfig = {
-      ...formConfig,
-      fields: formConfig.fields.map(field => {
-        // Remove _id if it's empty or undefined
-        const { _id, ...fieldWithoutId } = field;
-        return fieldWithoutId;
-      }),
-      theme: formConfig.theme || {
-        primaryColor: "#007bff",
-        backgroundColor: "#ffffff",
-        textColor: "#333333"
-      }
-    };
-
-    // Create campaign
-    const campaign = new Campaign({
+    const voucher = await Coupon.findOne({
+      _id: campaignData.voucherId,
       businessId,
-      name,
-      type,
-      description,
-      startDate,
-      endDate,
-      formConfig: processedFormConfig,
-      referralLinks,
-      status: 'active'
+      isActive: true
+    });
+
+    if (!voucher) {
+      return res.status(404).json({
+        success: false,
+        message: 'Voucher not found or inactive! 🚫'
+      });
+    }
+
+    // Validate dates match voucher validity
+    const campaignStart = new Date(campaignData.startDate);
+    const campaignEnd = new Date(campaignData.endDate);
+    const voucherStart = new Date(voucher.startDate);
+    const voucherEnd = new Date(voucher.endDate);
+
+    if (campaignStart < voucherStart || campaignEnd > voucherEnd) {
+      return res.status(400).json({
+        success: false,
+        message: 'Campaign dates must be within voucher validity period! ⚠️',
+        data: {
+          voucherValidity: {
+            start: voucherStart,
+            end: voucherEnd
+          }
+        }
+      });
+    }
+
+    // Process form config
+    if (campaignData.formConfig) {
+      campaignData.formConfig.fields = campaignData.formConfig.fields.map(field => ({
+        name: field.name,
+        type: field.type,
+        required: field.isRequired || false,
+        options: field.options || []
+      }));
+    }
+
+    // Create campaign with voucher reference 🎯
+    const campaign = new Campaign({
+      ...campaignData,
+      businessId,
+      status: 'draft' // Always start as draft
     });
 
     await campaign.save();
 
-    // Get base URL from environment or default
-    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+    // Populate response with voucher details 🔍
+    await campaign.populate([
+      {
+        path: 'voucherId',
+        select: 'code title description discountType discountValue startDate endDate',
+        populate: {
+          path: 'widgetTemplateId',
+          select: 'name category settings'
+        }
+      }
+    ]);
 
     res.status(201).json({
       success: true,
       message: 'Campaign created successfully! 🎉',
       data: {
-        campaignId: campaign._id,
-        referralLinks: campaign.referralLinks.map(link => ({
-          code: link.code,
-          influencerName: link.influencerName,
-          platform: link.platform,
-          shareUrl: `${baseUrl}/ref/${link.code}` // URL to share
+        campaign,
+        shareUrls: campaign.influencers.map(inf => ({
+          name: inf.name,
+          platform: inf.platform,
+          referralCode: inf.referralCode,
+          shareUrl: `${process.env.BASE_URL}/ref/${inf.referralCode}`
         }))
       }
     });
   } catch (error) {
     console.error('Create campaign error:', error);
+    
+    // Handle validation errors ❌
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed! Please check your input. ❌',
+        errors: validationErrors
+      });
+    }
+
+    // Handle cast errors (invalid ObjectId)
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid ${error.path} format! Please provide a valid ID. 🚫`
+      });
+    }
+
     res.status(500).json({
       success: false,
-      message: 'Failed to create campaign! 😢',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: 'Failed to create campaign! 😢'
     });
   }
 };
@@ -453,10 +488,121 @@ const getAllCampaigns = async (req, res) => {
   }
 };
 
+// List all campaigns 📋
+const listCampaigns = async (req, res) => {
+  try {
+    const businessId = req.user.userId;
+    const { page = 1, limit = 10, status, type, search } = req.query;
+
+    const query = { businessId };
+
+    // Add filters 🔍
+    if (status) query.status = status;
+    if (type) query.type = type;
+    if (search) {
+      query.$or = [
+        { name: new RegExp(search, 'i') },
+        { description: new RegExp(search, 'i') }
+      ];
+    }
+
+    // Get campaigns with voucher and widget details 🎯
+    const [campaigns, total] = await Promise.all([
+      Campaign.find(query)
+        .populate({
+          path: 'voucherId',
+          select: 'code title description discountType discountValue startDate endDate isActive',
+          populate: {
+            path: 'widgetTemplateId',
+            select: 'name category settings thumbnail isActive'
+          }
+        })
+        .sort({ createdAt: -1 })
+        .skip((page - 1) * limit)
+        .limit(parseInt(limit)),
+      Campaign.countDocuments(query)
+    ]);
+
+    // Process campaigns to include status and stats 📊
+    const processedCampaigns = campaigns.map(campaign => {
+      const campaignObj = campaign.toObject();
+      
+      // Calculate campaign status
+      const now = new Date();
+      let status = campaign.status;
+      
+      if (status === 'active') {
+        if (now < campaign.startDate) {
+          status = 'scheduled';
+        } else if (now > campaign.endDate) {
+          status = 'completed';
+        }
+      }
+
+      // Add voucher status
+      if (campaignObj.voucherId) {
+        campaignObj.voucherStatus = {
+          isActive: campaignObj.voucherId.isActive,
+          isExpired: new Date(campaignObj.voucherId.endDate) < now,
+          timeRemaining: new Date(campaignObj.voucherId.endDate) > now 
+            ? Math.ceil((new Date(campaignObj.voucherId.endDate) - now) / (1000 * 60 * 60 * 24))
+            : 0
+        };
+      }
+
+      // Calculate performance metrics
+      const performance = {
+        conversionRate: campaignObj.analytics.uniqueClicks > 0
+          ? (campaignObj.analytics.conversions / campaignObj.analytics.uniqueClicks) * 100
+          : 0,
+        roi: campaignObj.budget.spent > 0
+          ? ((campaignObj.analytics.revenue - campaignObj.budget.spent) / campaignObj.budget.spent) * 100
+          : 0
+      };
+
+      return {
+        ...campaignObj,
+        status,
+        performance,
+        timeRemaining: campaign.endDate > now 
+          ? Math.ceil((campaign.endDate - now) / (1000 * 60 * 60 * 24))
+          : 0
+      };
+    });
+
+    res.json({
+      success: true,
+      data: {
+        campaigns: processedCampaigns,
+        pagination: {
+          total,
+          page: parseInt(page),
+          pages: Math.ceil(total / limit)
+        },
+        summary: {
+          total,
+          active: processedCampaigns.filter(c => c.status === 'active').length,
+          scheduled: processedCampaigns.filter(c => c.status === 'scheduled').length,
+          completed: processedCampaigns.filter(c => c.status === 'completed').length,
+          paused: processedCampaigns.filter(c => c.status === 'paused').length,
+          cancelled: processedCampaigns.filter(c => c.status === 'cancelled').length
+        }
+      }
+    });
+  } catch (error) {
+    console.error('List campaigns error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch campaigns! 😢'
+    });
+  }
+};
+
 module.exports = {
   createCampaign,
   trackCampaignClick,
   submitCampaignForm,
   getCampaignAnalytics,
-  getAllCampaigns
+  getAllCampaigns,
+  listCampaigns
 }; 
