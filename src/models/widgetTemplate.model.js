@@ -19,7 +19,6 @@ const widgetTemplateSchema = new mongoose.Schema({
   },
   thumbnail: {
     type: String,
-    required: [true, 'Template thumbnail is required! 🖼️'],
     validate: {
       validator: function(v) {
         return /^https?:\/\/.+/.test(v);
@@ -45,149 +44,279 @@ const widgetTemplateSchema = new mongoose.Schema({
     required: [true, 'Creator reference is required! 👤']
   },
   settings: {
-    layout: {
-      type: {
-        type: String,
-        enum: ['split', 'centered', 'minimal', 'full-width'],
-        default: 'centered'
-      },
-      position: {
-        type: String,
-        enum: ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'center'],
-        default: 'bottom-right'
-      }
-    },
-    timing: {
-      type: {
-        type: String,
-        enum: ['immediate', 'delay', 'scroll', 'exit-intent'],
-        default: 'immediate'
-      },
-      delay: {
-        type: Number,
-        min: [0, 'Delay cannot be negative'],
-        max: [60000, 'Delay cannot exceed 60 seconds'],
-        default: 0
-      },
-      scrollPercentage: {
-        type: Number,
-        min: [0, 'Scroll percentage cannot be negative'],
-        max: [100, 'Scroll percentage cannot exceed 100'],
-        default: 50
-      }
-    },
-    animation: {
-      type: String,
-      enum: ['fade', 'slide', 'bounce', 'none'],
-      default: 'fade'
-    },
-    design: {
-      colors: {
-        primary: {
+    branding: {
+      logo: {
+        url: String,
+        width: Number,
+        height: Number,
+        position: {
           type: String,
-          match: [/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'Invalid color format! Use hex code (e.g., #FF5733)'],
-          default: '#4CAF50'
-        },
-        secondary: {
-          type: String,
-          match: [/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'Invalid color format!'],
-          default: '#2196F3'
-        },
-        text: {
-          type: String,
-          match: [/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'Invalid color format!'],
-          default: '#000000'
-        },
-        background: {
-          type: String,
-          match: [/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'Invalid color format!'],
-          default: '#FFFFFF'
-        },
-        accent: {
-          type: String,
-          match: [/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/, 'Invalid color format!'],
-          default: '#FFC107'
+          enum: ['top', 'bottom', 'hidden'],
+          default: 'top'
         }
       },
-      typography: {
-        headingFont: {
-          type: String,
-          enum: ['Arial', 'Helvetica', 'Times New Roman', 'Georgia', 'Verdana'],
-          default: 'Arial'
-        },
-        bodyFont: {
-          type: String,
-          enum: ['Arial', 'Helvetica', 'Times New Roman', 'Georgia', 'Verdana'],
-          default: 'Arial'
+      businessName: {
+        show: {
+          type: Boolean,
+          default: true
         },
         fontSize: {
+          type: Number,
+          default: 24
+        },
+        fontWeight: {
           type: String,
-          enum: ['small', 'medium', 'large'],
-          default: 'medium'
+          enum: ['normal', 'bold', 'bolder'],
+          default: 'bold'
+        }
+      }
+    },
+    offer: {
+      title: {
+        text: {
+          type: String,
+          default: '15% OFF BILL'
+        },
+        fontSize: {
+          type: Number,
+          default: 32
+        },
+        fontWeight: {
+          type: String,
+          enum: ['normal', 'bold', 'bolder'],
+          default: 'bold'
         }
       },
-      borderRadius: {
-        type: String,
-        enum: ['none', 'small', 'medium', 'large', 'full'],
-        default: 'medium'
-      },
-      shadow: {
-        type: String,
-        enum: ['none', 'small', 'medium', 'large'],
-        default: 'medium'
+      description: {
+        text: {
+          type: String,
+          default: 'Get reward 15% OFF EVERYTHING! for the first visit!'
+        },
+        fontSize: {
+          type: Number,
+          default: 16
+        }
       }
     },
     qrCode: {
-      position: {
-        type: String,
-        enum: ['left', 'right', 'center'],
-        default: 'right'
-      },
       size: {
         type: String,
         enum: ['small', 'medium', 'large'],
         default: 'medium'
+      },
+      position: {
+        type: String,
+        enum: ['left', 'center', 'right'],
+        default: 'center'
       },
       style: {
         type: String,
         enum: ['standard', 'rounded', 'dots'],
         default: 'standard'
       },
+      backgroundColor: {
+        type: String,
+        default: '#FFFFFF'
+      },
+      foregroundColor: {
+        type: String,
+        default: '#000000'
+      },
       margin: {
         type: Number,
-        min: [0, 'Margin cannot be negative'],
-        max: [100, 'Margin cannot exceed 100px'],
         default: 20
+      },
+      errorCorrectionLevel: {
+        type: String,
+        enum: ['L', 'M', 'Q', 'H'],
+        default: 'M'
       }
     },
-    content: {
-      heading: {
-        type: String,
-        default: 'Welcome!',
-        maxlength: [100, 'Heading cannot exceed 100 characters']
-      },
-      subheading: {
-        type: String,
-        maxlength: [200, 'Subheading cannot exceed 200 characters']
-      },
-      body: {
-        type: String,
-        maxlength: [1000, 'Body text cannot exceed 1000 characters']
-      },
-      ctaText: {
-        type: String,
-        default: 'Scan QR Code',
-        maxlength: [50, 'CTA text cannot exceed 50 characters']
-      },
-      showLogo: {
+    walletIntegration: {
+      enabled: {
         type: Boolean,
         default: true
       },
-      logoPosition: {
+      types: {
+        apple: {
+          enabled: {
+            type: Boolean,
+            default: true
+          },
+          buttonStyle: {
+            type: String,
+            enum: ['black', 'white', 'outline'],
+            default: 'black'
+          }
+        },
+        google: {
+          enabled: {
+            type: Boolean,
+            default: true
+          },
+          buttonStyle: {
+            type: String,
+            enum: ['black', 'white', 'outline'],
+            default: 'black'
+          }
+        }
+      },
+      position: {
         type: String,
         enum: ['top', 'bottom'],
-        default: 'top'
+        default: 'bottom'
       }
+    },
+    design: {
+      layout: {
+        type: {
+          type: String,
+          enum: ['standard', 'compact', 'full-width'],
+          default: 'standard'
+        },
+        spacing: {
+          type: Number,
+          default: 20
+        },
+        padding: {
+          type: Number,
+          default: 24
+        }
+      },
+      colors: {
+        primary: {
+          type: String,
+          default: '#000000',
+          validate: {
+            validator: function(v) {
+              return /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(v);
+            },
+            message: 'Invalid color format! Use hex code (e.g., #FF5733)'
+          }
+        },
+        secondary: {
+          type: String,
+          default: '#FFFFFF',
+          validate: {
+            validator: function(v) {
+              return /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(v);
+            },
+            message: 'Invalid color format!'
+          }
+        },
+        background: {
+          type: String,
+          default: '#FFFFFF',
+          validate: {
+            validator: function(v) {
+              return /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(v);
+            },
+            message: 'Invalid color format!'
+          }
+        },
+        text: {
+          type: String,
+          default: '#000000',
+          validate: {
+            validator: function(v) {
+              return /^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(v);
+            },
+            message: 'Invalid color format!'
+          }
+        }
+      },
+      typography: {
+        fontFamily: {
+          type: String,
+          enum: ['Arial', 'Helvetica', 'Inter', 'Roboto', 'Open Sans'],
+          default: 'Inter'
+        },
+        scale: {
+          type: String,
+          enum: ['small', 'medium', 'large'],
+          default: 'medium'
+        }
+      },
+      borderRadius: {
+        type: Number,
+        default: 8,
+        min: 0,
+        max: 50
+      },
+      shadow: {
+        enabled: {
+          type: Boolean,
+          default: true
+        },
+        intensity: {
+          type: String,
+          enum: ['soft', 'medium', 'strong'],
+          default: 'medium'
+        }
+      }
+    },
+    pwa: {
+      enabled: {
+        type: Boolean,
+        default: true
+      },
+      icon: String,
+      backgroundColor: {
+        type: String,
+        default: '#FFFFFF'
+      },
+      themeColor: {
+        type: String,
+        default: '#000000'
+      }
+    },
+    display: {
+      position: {
+        type: String,
+        enum: ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'center'],
+        default: 'bottom-right'
+      },
+      animation: {
+        type: String,
+        enum: ['fade', 'slide', 'bounce'],
+        default: 'fade'
+      },
+      timing: {
+        delay: {
+          type: Number,
+          default: 0,
+          min: 0,
+          max: 60000
+        },
+        duration: {
+          type: Number,
+          default: 5000,
+          min: 1000,
+          max: 300000
+        }
+      },
+      responsive: {
+        mobile: {
+          enabled: {
+            type: Boolean,
+            default: true
+          },
+          breakpoint: {
+            type: Number,
+            default: 768
+          }
+        },
+        desktop: {
+          enabled: {
+            type: Boolean,
+            default: true
+          }
+        }
+      }
+    },
+    support: {
+      contactNumber: String,
+      helpText: String
     }
   }
 }, {
@@ -199,7 +328,6 @@ widgetTemplateSchema.index({ name: 1 });
 widgetTemplateSchema.index({ category: 1 });
 widgetTemplateSchema.index({ isActive: 1 });
 widgetTemplateSchema.index({ createdBy: 1 });
-widgetTemplateSchema.index({ 'settings.layout.type': 1 });
 widgetTemplateSchema.index({ createdAt: -1 });
 
 // Methods 🛠️
@@ -214,14 +342,15 @@ widgetTemplateSchema.pre('save', function(next) {
   // Ensure settings object exists
   this.settings = this.settings || {};
   
-  // Ensure nested objects exist
-  this.settings.layout = this.settings.layout || {};
-  this.settings.timing = this.settings.timing || {};
-  this.settings.design = this.settings.design || {};
-  this.settings.design.colors = this.settings.design.colors || {};
-  this.settings.design.typography = this.settings.design.typography || {};
+  // Ensure all nested objects exist
+  this.settings.branding = this.settings.branding || {};
+  this.settings.offer = this.settings.offer || {};
   this.settings.qrCode = this.settings.qrCode || {};
-  this.settings.content = this.settings.content || {};
+  this.settings.walletIntegration = this.settings.walletIntegration || {};
+  this.settings.design = this.settings.design || {};
+  this.settings.pwa = this.settings.pwa || {};
+  this.settings.display = this.settings.display || {};
+  this.settings.support = this.settings.support || {};
   
   next();
 });
