@@ -1,261 +1,202 @@
 // Import dependencies 📦
 const User = require('../models/user.model');
+const Coupon = require('../models/coupon.model');
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
 
-// Get popup configuration 🎯
-const getPopupConfig = async (req, res) => {
+// Get voucher popup details 🎫
+const getVoucherPopup = async (req, res) => {
   try {
-    const { businessId } = req.params;
+    const { voucherId } = req.params;
 
-    const business = await User.findOne({ 
-      _id: businessId, 
-      role: 'business',
-      isVerified: true 
-    }).select('businessProfile.popupSettings');
+    // Find active voucher
+    const voucher = await Coupon.findOne({
+      _id: voucherId,
+      isActive: true,
+    }).populate('businessId', 'businessProfile.businessName businessProfile.logo');
 
-    if (!business) {
+    if (!voucher) {
       return res.status(404).json({
         success: false,
-        message: 'Business not found or not verified! 🏢'
+        message: 'Voucher not found or expired! 🚫'
       });
     }
 
+    // Increment views counter
+    await Coupon.updateOne(
+      { _id: voucherId },
+      { $inc: { 'analytics.views': 1 } }
+    );
+
+    // Return limited voucher info for popup
     res.json({
       success: true,
       data: {
-        settings: business.businessProfile.popupSettings || {
-          template: 'default',
-          timing: {
-            displayDelay: 3000,
-            displayFrequency: 'once-per-session',
-            scrollTrigger: 50
-          },
-          design: {
-            layout: 'centered',
-            colors: {
-              background: '#FFFFFF',
-              text: '#000000',
-              button: '#4CAF50'
-            },
-            logo: business.businessProfile.logo
-          },
-          content: {
-            title: 'Special Offer!',
-            description: 'Get your exclusive discount',
-            buttonText: 'Claim Now'
-          }
+        voucherId: voucher._id,
+        title: voucher.title,
+        description: voucher.description,
+        discountType: voucher.discountType,
+        discountValue: voucher.discountValue,
+        expiryDate: voucher.endDate,
+        business: {
+          name: voucher.businessId.businessProfile.businessName,
+          logo: voucher.businessId.businessProfile.logo
         }
       }
     });
   } catch (error) {
-    console.error('Get popup config error:', error);
+    console.error('Get voucher popup error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch popup configuration! 😢'
+      message: 'Failed to fetch voucher details! 😢'
     });
   }
 };
 
-// Update popup settings 🎨
-const updatePopupSettings = async (req, res) => {
-  try {
-    const { businessId } = req.params;
-    const settings = req.body;
-
-    const business = await User.findOneAndUpdate(
-      { 
-        _id: businessId, 
-        role: 'business',
-        isVerified: true 
-      },
-      {
-        $set: {
-          'businessProfile.popupSettings': {
-            ...settings,
-            updatedAt: new Date()
-          }
-        }
-      },
-      { new: true }
-    ).select('businessProfile.popupSettings');
-
-    if (!business) {
-      return res.status(404).json({
-        success: false,
-        message: 'Business not found or not verified! 🏢'
-      });
-    }
-
-    res.json({
-      success: true,
-      message: 'Popup settings updated successfully! 🎨',
-      data: business.businessProfile.popupSettings
-    });
-  } catch (error) {
-    console.error('Update popup settings error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to update popup settings! 😢'
-    });
-  }
-};
-
-// Get popup templates 📝
-const getPopupTemplates = async (req, res) => {
-  try {
-    // Predefined templates
-    const templates = [
-      {
-        id: 'default',
-        name: 'Default Template',
-        description: 'Simple and clean design',
-        preview: 'https://example.com/templates/default.png',
-        settings: {
-          layout: 'centered',
-          colors: {
-            background: '#FFFFFF',
-            text: '#000000',
-            button: '#4CAF50'
-          }
-        }
-      },
-      {
-        id: 'modern',
-        name: 'Modern Template',
-        description: 'Sleek and modern design',
-        preview: 'https://example.com/templates/modern.png',
-        settings: {
-          layout: 'right-aligned',
-          colors: {
-            background: '#2C3E50',
-            text: '#FFFFFF',
-            button: '#E74C3C'
-          }
-        }
-      },
-      {
-        id: 'festive',
-        name: 'Festive Template',
-        description: 'Perfect for special occasions',
-        preview: 'https://example.com/templates/festive.png',
-        settings: {
-          layout: 'full-width',
-          colors: {
-            background: '#FFD700',
-            text: '#8B4513',
-            button: '#FF4500'
-          }
-        }
-      }
-    ];
-
-    res.json({
-      success: true,
-      data: {
-        templates,
-        categories: ['Simple', 'Modern', 'Festive', 'Seasonal'],
-        features: ['Customizable Colors', 'Mobile Responsive', 'Animation Effects']
-      }
-    });
-  } catch (error) {
-    console.error('Get popup templates error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch popup templates! 😢'
-    });
-  }
-};
-
-// Generate popup preview 👁️
-const generatePopupPreview = async (req, res) => {
+// Register user and claim voucher 📝
+const registerAndClaimVoucher = async (req, res) => {
   try {
     const {
-      template,
-      settings,
-      content
+      firstName,
+      lastName,
+      email,
+      password,
+      phoneNumber,
+      age,
+      gender,
+      voucherId
     } = req.body;
 
-    // Validate template
-    const validTemplates = ['default', 'modern', 'festive'];
-    if (!validTemplates.includes(template)) {
+    // Check if user exists
+    let user = await User.findOne({ email });
+    
+    if (user) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid template selected! 🚫'
+        message: 'Email already registered! Please login to claim voucher. 📧'
       });
     }
 
-    // Generate preview HTML
-    const previewHtml = generatePreviewHtml(template, settings, content);
+    // Find voucher and business
+    const voucher = await Coupon.findOne({
+      _id: voucherId,
+      isActive: true
+    }).select('businessId');
 
-    res.json({
-      success: true,
-      data: {
-        previewHtml,
-        previewUrl: `data:text/html;base64,${Buffer.from(previewHtml).toString('base64')}`,
-        settings: {
-          template,
-          ...settings
-        }
+    if (!voucher) {
+      return res.status(404).json({
+        success: false,
+        message: 'Voucher not found or inactive! 🚫'
+      });
+    }
+
+    // Create new user
+    user = new User({
+      firstName,
+      lastName,
+      email,
+      password,
+      phoneNumber,
+      role: 'customer',
+      dateOfBirth: age ? new Date().setFullYear(new Date().getFullYear() - age) : undefined,
+      gender,
+      isVerified: false, // Require email verification
+      guestDetails: {
+        claimedFrom: 'popup',
+        businessId: voucher.businessId
       }
     });
+
+    // Generate verification token
+    user.verificationToken = crypto.randomBytes(32).toString('hex');
+    
+    await user.save();
+
+    // Generate claim ID
+    const claimId = crypto.randomBytes(16).toString('hex');
+
+    // Return success with claim ID
+    res.status(201).json({
+      success: true,
+      message: 'Registration successful! 🎉',
+      data: {
+        claimId,
+        userId: user._id,
+        verificationToken: user.verificationToken
+      }
+    });
+
   } catch (error) {
-    console.error('Generate popup preview error:', error);
+    console.error('Register and claim error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to generate popup preview! 😢'
+      message: 'Registration failed! Please try again. 😢'
     });
   }
 };
 
-// Helper function to generate preview HTML 🛠️
-const generatePreviewHtml = (template, settings, content) => {
-  // Basic template structure
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <style>
-        .popup-container {
-          font-family: Arial, sans-serif;
-          background-color: ${settings.colors?.background || '#FFFFFF'};
-          color: ${settings.colors?.text || '#000000'};
-          padding: 20px;
-          border-radius: 8px;
-          box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-          max-width: 400px;
-          margin: 20px auto;
-          text-align: center;
+// Get claimed voucher details 🎯
+const getClaimedVoucher = async (req, res) => {
+  try {
+    const { claimId } = req.params;
+    const { userId, voucherId } = req.query;
+
+    // Verify user and voucher
+    const [user, voucher] = await Promise.all([
+      User.findById(userId),
+      Coupon.findOne({
+        _id: voucherId,
+        isActive: true
+      })
+    ]);
+
+    if (!user || !voucher) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invalid claim details! 🚫'
+      });
+    }
+
+    // Increment clicks counter
+    await Coupon.updateOne(
+      { _id: voucherId },
+      { $inc: { 'analytics.clicks': 1 } }
+    );
+
+    // Return complete voucher details
+    res.json({
+      success: true,
+      data: {
+        voucher: {
+          id: voucher._id,
+          code: voucher.code,
+          title: voucher.title,
+          description: voucher.description,
+          discountType: voucher.discountType,
+          discountValue: voucher.discountValue,
+          expiryDate: voucher.endDate,
+          qrCode: voucher.qrCode
+        },
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email
         }
-        .popup-button {
-          background-color: ${settings.colors?.button || '#4CAF50'};
-          color: white;
-          padding: 10px 20px;
-          border: none;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 16px;
-          margin-top: 15px;
-        }
-        .popup-logo {
-          max-width: 150px;
-          margin-bottom: 15px;
-        }
-      </style>
-    </head>
-    <body>
-      <div class="popup-container">
-        ${settings.logo ? `<img src="${settings.logo}" class="popup-logo" alt="Logo">` : ''}
-        <h2>${content.title || 'Special Offer!'}</h2>
-        <p>${content.description || 'Get your exclusive discount'}</p>
-        <button class="popup-button">${content.buttonText || 'Claim Now'}</button>
-      </div>
-    </body>
-    </html>
-  `;
+      }
+    });
+
+  } catch (error) {
+    console.error('Get claimed voucher error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch claimed voucher! 😢'
+    });
+  }
 };
 
 module.exports = {
-  getPopupConfig,
-  updatePopupSettings,
-  getPopupTemplates,
-  generatePopupPreview
+  getVoucherPopup,
+  registerAndClaimVoucher,
+  getClaimedVoucher
 }; 

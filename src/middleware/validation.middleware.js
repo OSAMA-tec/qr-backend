@@ -914,7 +914,55 @@ const campaignFormValidation = [
   }
 ];
 
+// User registration validation for popup form 📝
+const userRegistrationValidation = [
+  body('firstName')
+    .trim()
+    .notEmpty().withMessage('First name is required! 👤')
+    .isLength({ min: 2, max: 50 }).withMessage('First name must be between 2 and 50 characters')
+    .matches(/^[a-zA-Z\s]+$/).withMessage('First name can only contain letters'),
+
+  body('lastName')
+    .trim()
+    .notEmpty().withMessage('Last name is required! 👤')
+    .isLength({ min: 2, max: 50 }).withMessage('Last name must be between 2 and 50 characters')
+    .matches(/^[a-zA-Z\s]+$/).withMessage('Last name can only contain letters'),
+
+  body('email')
+    .trim()
+    .notEmpty().withMessage('Email is required! 📧')
+    .isEmail().withMessage('Please enter a valid email address')
+    .normalizeEmail(),
+
+  body('password')
+    .notEmpty().withMessage('Password is required! 🔑')
+    .isLength({ min: 6 }).withMessage('Password must be at least 6 characters long')
+    .matches(/^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])/)
+    .withMessage('Password must contain at least one number, one lowercase and one uppercase letter'),
+
+  body('phoneNumber')
+    .notEmpty().withMessage('Phone number is required! 📱')
+    .matches(/^\+?[\d\s-]+$/).withMessage('Invalid phone number format'),
+
+  body('age')
+    .notEmpty().withMessage('Age is required! 🎂')
+    .isInt({ min: 13, max: 120 }).withMessage('Age must be between 13 and 120'),
+
+  body('gender')
+    .notEmpty().withMessage('Gender is required! 👥')
+    .isIn(['male', 'female', 'other', 'prefer_not_to_say'])
+    .withMessage('Invalid gender selection'),
+
+  body('voucherId')
+    .notEmpty().withMessage('Voucher ID is required! 🎫')
+    .isMongoId().withMessage('Invalid voucher ID format'),
+
+  handleValidationErrors
+];
+
+// Export all validations
 module.exports = {
+  userRegistrationValidation,
   registerValidation,
   loginValidation,
   forgotPasswordValidation,
