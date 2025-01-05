@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claim Your Voucher 🎫</title>
+    
+    <!-- Dynamic Styles -->
+    <% if (typeof design !== 'undefined') { %>
+    <style>
+        :root {
+            --color-background: <%= design.background || '#FFFFFF' %>;
+            --color-text: <%= design.textColor || '#333333' %>;
+            --color-primary: <%= design.primaryColor || '#2196F3' %>;
+            --color-button-text: <%= design.buttonTextColor || '#FFFFFF' %>;
+        }
+    </style>
+    <% } %>
+    
+    <style>
+        /* Theme Variables 🎨 */
+        :root {
+            --color-error: #f44336;
+            --color-success: #4caf50;
+            --color-border: #E0E0E0;
+            --spacing-xs: 5px;
+            --spacing-sm: 10px;
+            --spacing-md: 15px;
+            --spacing-lg: 25px;
+            --shadow-sm: 0 2px 4px rgba(0,0,0,0.1);
+            --shadow-md: 0 4px 20px rgba(0,0,0,0.15);
+            --radius-sm: 6px;
+            --radius-md: 12px;
+        }
+
+        /* Reset & Base Styles 🔄 */
+        * { 
+            margin: 0; 
+            padding: 0; 
+            box-sizing: border-box; 
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            background: rgba(0, 0, 0, 0.5);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--color-text);
+            padding: var(--spacing-md);
+        }
+
+        /* Popup Container 📦 */
+        .popup-container {
+            background: var(--color-background);
+            border-radius: var(--radius-md);
+            box-shadow: var(--shadow-md);
+            width: 90%;
+            max-width: 500px;
+            padding: var(--spacing-lg);
+            position: relative;
+            animation: popup-appear 0.3s ease-out;
+        }
+
+        @keyframes popup-appear {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Business Logo 🏢 */
+        .business-logo {
+            text-align: center;
+            margin-bottom: var(--spacing-lg);
+        }
+        
+        .business-logo img {
+            max-width: 150px;
+            max-height: 60px;
+            object-fit: contain;
+            transition: transform 0.3s ease;
+        }
+
+        .business-logo img:hover {
+            transform: scale(1.05);
+        }
+
+        /* Form Elements 📝 */
+        .form-group {
+            margin-bottom: var(--spacing-md);
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: var(--spacing-xs);
+            font-weight: 500;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: var(--spacing-sm);
+            border: 2px solid var(--color-border);
+            border-radius: var(--radius-sm);
+            font-size: 16px;
+            transition: all 0.2s ease;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--color-primary);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .form-control:hover {
+            border-color: var(--color-primary);
+        }
+
+        /* Buttons 🔘 */
+        .btn {
+            display: inline-block;
+            padding: var(--spacing-sm) var(--spacing-lg);
+            border: none;
+            border-radius: var(--radius-sm);
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            width: 100%;
+        }
+
+        .btn-primary {
+            background: var(--color-primary);
+            color: var(--color-button-text);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        /* Messages 💬 */
+        .error-message, 
+        .success-message {
+            padding: var(--spacing-sm);
+            border-radius: var(--radius-sm);
+            margin-bottom: var(--spacing-md);
+            font-size: 14px;
+            animation: message-appear 0.3s ease-out;
+        }
+
+        .error-message {
+            color: var(--color-error);
+            background: rgba(244, 67, 54, 0.1);
+        }
+
+        .success-message {
+            color: var(--color-success);
+            background: rgba(76, 175, 80, 0.1);
+        }
+
+        @keyframes message-appear {
+            from {
+                opacity: 0;
+                transform: translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Loading State 🔄 */
+        .loading {
+            opacity: 0.7;
+            pointer-events: none;
+            position: relative;
+        }
+
+        .loading::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 20px;
+            height: 20px;
+            margin: -10px 0 0 -10px;
+            border: 2px solid var(--color-primary);
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: loading-spinner 0.8s linear infinite;
+        }
+
+        @keyframes loading-spinner {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* Responsive Design 📱 */
+        @media (max-width: 480px) {
+            .popup-container {
+                width: 100%;
+                padding: var(--spacing-md);
+                border-radius: var(--radius-sm);
+            }
+
+            .btn {
+                padding: var(--spacing-sm) var(--spacing-md);
+            }
+        }
+
+        /* Print Styles 🖨️ */
+        @media print {
+            body {
+                background: white;
+            }
+            .popup-container {
+                box-shadow: none;
+                padding: 0;
+            }
+            .btn {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="popup-container">
+        <%- body %>
+    </div>
+    
+    <!-- Loading State Handler -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // Add loading state to buttons when clicked 🔄
+            document.querySelectorAll('.btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    if (!btn.classList.contains('loading')) {
+                        btn.classList.add('loading');
+                    }
+                });
+            });
+
+            // Remove loading state when form submits ✅
+            document.querySelectorAll('form').forEach(form => {
+                form.addEventListener('submit', () => {
+                    form.classList.add('loading');
+                });
+            });
+        });
+    </script>
+</body>
+</html> 

@@ -1,0 +1,169 @@
+<!-- Design Data -->
+<div id="designData" 
+    data-design='<%= JSON.stringify(design) %>'
+    style="display: none;">
+</div>
+
+<!-- Business Logo 🏢 -->
+<div class="business-logo">
+    <% if (business.logo) { %>
+        <img src="<%= business.logo %>" alt="<%= business.name %>">
+    <% } %>
+</div>
+
+<!-- Success Message ✅ -->
+<div class="success-message">
+    Congratulations <%= user.firstName %>! Your voucher has been claimed successfully.
+</div>
+
+<!-- Voucher Details 🎫 -->
+<div class="voucher-details" id="voucherDetails">
+    <h2 id="voucherTitle"><%= voucher.title %></h2>
+    <p><%= voucher.description %></p>
+    
+    <div class="discount-info">
+        <strong id="discountValue">
+            <%= voucher.discountType === 'percentage' ? `${voucher.discountValue}% OFF` : `$${voucher.discountValue} OFF` %>
+        </strong>
+        <div class="code">
+            Code: <strong><%= voucher.code %></strong>
+        </div>
+        <small>Valid until: <%= new Date(voucher.expiryDate).toLocaleDateString() %></small>
+    </div>
+</div>
+
+<!-- QR Code 📱 -->
+<div class="qr-code">
+    <img src="<%= voucher.qrCode %>" alt="Voucher QR Code">
+    <p>Scan to redeem at <%= business.name %></p>
+</div>
+
+<!-- User Info 👤 -->
+<div class="user-info">
+    <p>Claimed by: <%= user.firstName %> <%= user.lastName %></p>
+    <p>Email: <%= user.email %></p>
+</div>
+
+<!-- Instructions 📝 -->
+<div class="instructions">
+    <h3 id="instructionsTitle">How to use:</h3>
+    <ol>
+        <li>Show this QR code at <%= business.name %></li>
+        <li>Staff will scan to verify and apply discount</li>
+        <li>Enjoy your savings! 🎉</li>
+    </ol>
+</div>
+
+<style>
+    .voucher-details {
+        text-align: center;
+        margin: 25px 0;
+        padding: 20px;
+        border-radius: 8px;
+    }
+
+    .voucher-details h2 {
+        margin-bottom: 10px;
+    }
+
+    .discount-info {
+        margin: 20px 0;
+    }
+
+    .discount-info strong {
+        display: block;
+        font-size: 28px;
+    }
+
+    .code {
+        margin: 15px 0;
+        padding: 10px;
+        background: #fff;
+        border-radius: 4px;
+        font-size: 18px;
+    }
+
+    .qr-code {
+        text-align: center;
+        margin: 30px 0;
+    }
+
+    .qr-code img {
+        max-width: 200px;
+        margin-bottom: 10px;
+    }
+
+    .user-info {
+        margin: 20px 0;
+        padding: 15px;
+        background: rgba(0,0,0,0.05);
+        border-radius: 6px;
+    }
+
+    .instructions {
+        margin-top: 25px;
+    }
+
+    .instructions h3 {
+        margin-bottom: 10px;
+    }
+
+    .instructions ol {
+        padding-left: 20px;
+    }
+
+    .instructions li {
+        margin: 10px 0;
+    }
+
+    @media print {
+        body {
+            background: white;
+        }
+        .popup-container {
+            box-shadow: none;
+        }
+        .instructions {
+            display: none;
+        }
+    }
+</style>
+
+<!-- Save/Print Buttons 💾 -->
+<div class="action-buttons">
+    <button onclick="window.print()" class="btn btn-primary" id="printBtn">
+        Print Voucher 🖨️
+    </button>
+    <button onclick="downloadVoucher()" class="btn btn-primary" id="downloadBtn">
+        Save to Phone 📱
+    </button>
+</div>
+
+<script>
+    // Get design data from hidden element
+    const designData = JSON.parse(document.getElementById('designData').dataset.design);
+    
+    // Voucher details styles
+    document.getElementById('voucherDetails').style.background = designData.background || '#f5f5f5';
+    document.getElementById('voucherTitle').style.color = designData.primaryColor || '#2196F3';
+    document.getElementById('discountValue').style.color = designData.primaryColor || '#2196F3';
+    document.getElementById('instructionsTitle').style.color = designData.primaryColor || '#2196F3';
+    
+    // Button styles
+    const buttons = document.querySelectorAll('.btn-primary');
+    buttons.forEach(btn => {
+        btn.style.background = designData.primaryColor || '#2196F3';
+        btn.style.color = designData.buttonTextColor || '#FFFFFF';
+    });
+
+    function downloadVoucher() {
+        html2canvas(document.querySelector('.popup-container')).then(canvas => {
+            const link = document.createElement('a');
+            link.download = 'voucher-<%= voucher.code %>.png';
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        });
+    }
+</script>
+
+<script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script> 

@@ -1,0 +1,175 @@
+<!-- Business Logo 🏢 -->
+<div class="business-logo">
+    <% if (business.logo) { %>
+        <img src="<%= business.logo %>" alt="<%= business.name %>">
+    <% } %>
+</div>
+
+<!-- Voucher Info 🎫 -->
+<div class="voucher-info" id="voucherInfo">
+    <h2 id="voucherTitle"><%= voucher.title %></h2>
+    <p><%= voucher.description %></p>
+    <div class="discount-info">
+        <strong id="discountValue">
+            <%= voucher.discountType === 'percentage' ? `${voucher.discountValue}% OFF` : `$${voucher.discountValue} OFF` %>
+        </strong>
+        <small id="expiryDate">
+            Expires: <%= new Date(voucher.expiryDate).toLocaleDateString() %>
+        </small>
+    </div>
+</div>
+
+<!-- Error Message ❌ -->
+<% if (typeof error !== 'undefined') { %>
+    <div class="error-message">
+        <%= error %>
+    </div>
+<% } %>
+
+<!-- Registration Form 📝 -->
+<form action="/popup/claim-voucher" method="POST">
+    <input type="hidden" name="voucherId" value="<%= voucher.id %>">
+    
+    <div class="form-group">
+        <label class="form-label" for="firstName">First Name</label>
+        <input 
+            type="text" 
+            id="firstName" 
+            name="firstName" 
+            class="form-control"
+            required
+            value="<%= typeof formData !== 'undefined' ? formData.firstName : '' %>"
+        >
+    </div>
+
+    <div class="form-group">
+        <label class="form-label" for="lastName">Last Name</label>
+        <input 
+            type="text" 
+            id="lastName" 
+            name="lastName" 
+            class="form-control"
+            required
+            value="<%= typeof formData !== 'undefined' ? formData.lastName : '' %>"
+        >
+    </div>
+
+    <div class="form-group">
+        <label class="form-label" for="email">Email</label>
+        <input 
+            type="email" 
+            id="email" 
+            name="email" 
+            class="form-control"
+            required
+            value="<%= typeof formData !== 'undefined' ? formData.email : '' %>"
+        >
+    </div>
+
+    <div class="form-group">
+        <label class="form-label" for="password">Password</label>
+        <input 
+            type="password" 
+            id="password" 
+            name="password" 
+            class="form-control"
+            required
+            minlength="6"
+        >
+        <small>Must be at least 6 characters with numbers and letters</small>
+    </div>
+
+    <div class="form-group">
+        <label class="form-label" for="phoneNumber">Phone Number</label>
+        <input 
+            type="tel" 
+            id="phoneNumber" 
+            name="phoneNumber" 
+            class="form-control"
+            required
+            pattern="^\+?[\d\s-]+"
+            value="<%= typeof formData !== 'undefined' ? formData.phoneNumber : '' %>"
+        >
+    </div>
+
+    <div class="form-group">
+        <label class="form-label" for="age">Age</label>
+        <input 
+            type="number" 
+            id="age" 
+            name="age" 
+            class="form-control"
+            required
+            min="13"
+            max="120"
+            value="<%= typeof formData !== 'undefined' ? formData.age : '' %>"
+        >
+    </div>
+
+    <div class="form-group">
+        <label class="form-label" for="gender">Gender</label>
+        <select id="gender" name="gender" class="form-control" required>
+            <option value="">Select Gender</option>
+            <option value="male" <%= typeof formData !== 'undefined' && formData.gender === 'male' ? 'selected' : '' %>>Male</option>
+            <option value="female" <%= typeof formData !== 'undefined' && formData.gender === 'female' ? 'selected' : '' %>>Female</option>
+            <option value="other" <%= typeof formData !== 'undefined' && formData.gender === 'other' ? 'selected' : '' %>>Other</option>
+            <option value="prefer_not_to_say" <%= typeof formData !== 'undefined' && formData.gender === 'prefer_not_to_say' ? 'selected' : '' %>>Prefer not to say</option>
+        </select>
+    </div>
+
+    <button type="submit" class="btn btn-primary" id="submitBtn">
+        Claim Voucher 🎫
+    </button>
+</form>
+
+<style>
+    .voucher-info {
+        text-align: center;
+        margin-bottom: 25px;
+        padding: 15px;
+        border-radius: 8px;
+    }
+
+    .voucher-info h2 {
+        margin-bottom: 10px;
+    }
+
+    .discount-info {
+        margin-top: 15px;
+    }
+
+    .discount-info strong {
+        display: block;
+        font-size: 24px;
+    }
+
+    form {
+        margin-top: 20px;
+    }
+
+    small {
+        color: #666;
+        font-size: 12px;
+    }
+</style>
+
+<!-- Design Data -->
+<div id="designData" 
+    data-design='<%= JSON.stringify(design) %>'
+    style="display: none;">
+</div>
+
+<script>
+    // Get design data from hidden element
+    const designData = JSON.parse(document.getElementById('designData').dataset.design);
+    
+    // Voucher info styles
+    document.getElementById('voucherInfo').style.background = designData.background || '#f5f5f5';
+    document.getElementById('voucherTitle').style.color = designData.primaryColor || '#2196F3';
+    document.getElementById('discountValue').style.color = designData.primaryColor || '#2196F3';
+    document.getElementById('expiryDate').style.color = designData.textColor || '#666';
+    
+    // Submit button styles
+    document.getElementById('submitBtn').style.background = designData.primaryColor || '#2196F3';
+    document.getElementById('submitBtn').style.color = designData.buttonTextColor || '#FFFFFF';
+</script> 
