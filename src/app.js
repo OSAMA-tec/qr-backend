@@ -32,7 +32,7 @@ const chatSocketHandler = require('./socket/chat.socket');
 // Create socket server
 const io = socketIO(server, {
   cors: {
-    origin: ['http://localhost:5173','https://qr-lac-alpha.vercel.app'], // Match your CORS settings
+    origin: ['http://localhost:5173','https://qr-lac-alpha.vercel.app','http://127.0.0.1:5500'], // Match your CORS settings
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -45,7 +45,7 @@ app.use(cookieParser());
 
 // CORS configuration 🌐
 app.use(cors({
-  origin: ['http://localhost:5173','https://qr-lac-alpha.vercel.app'],
+  origin: ['http://localhost:5173','https://qr-lac-alpha.vercel.app','http://127.0.0.1:5500'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: [

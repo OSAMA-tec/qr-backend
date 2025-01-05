@@ -900,7 +900,8 @@ const createTemplate = async (req, res) => {
       name,
       description,
       category,
-      settings
+      settings,
+      thumbnailUrl // Now we expect thumbnailUrl instead of handling file upload
     } = req.body;
 
     // Validate user exists in request
@@ -911,25 +912,7 @@ const createTemplate = async (req, res) => {
       });
     }
 
-    // Handle thumbnail upload 🖼️
-    let thumbnailUrl;
-    if (req.file) {
-      try {
-        thumbnailUrl = await uploadTemplateThumbnail(req.file);
-      } catch (uploadError) {
-        console.error('Thumbnail upload error:', uploadError);
-        return res.status(400).json({
-          success: false,
-          message: 'Failed to upload thumbnail! Please try again. 🖼️'
-        });
-      }
-    } 
-    // else {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: 'Thumbnail image is required! 🖼️'
-    //   });
-    // }
+    // Validate thumbnail URL is provided
 
     // Parse and validate settings with defaults
     let parsedSettings = {
@@ -1055,7 +1038,6 @@ const createTemplate = async (req, res) => {
   } catch (error) {
     console.error('Create template error:', error);
     
-    // Handle validation errors
     if (error.name === 'ValidationError') {
       const validationErrors = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -1065,7 +1047,6 @@ const createTemplate = async (req, res) => {
       });
     }
 
-    // Handle other errors
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to create widget template! 😢'
@@ -1152,7 +1133,7 @@ const getAllTemplates = async (req, res) => {
   try {
     const {
       page = 1,
-      limit = 10,
+      limit = 100,
       category,
       search,
       isActive
@@ -1171,21 +1152,42 @@ const getAllTemplates = async (req, res) => {
 
     const [templates, total] = await Promise.all([
       WidgetTemplate.find(query)
+        .select('name description thumbnail category settings isActive createdAt updatedAt')
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
-        .populate('createdBy', 'firstName lastName'),
+        .lean(), // 🚀 Use lean() for better performance since we don't need mongoose methods
+
       WidgetTemplate.countDocuments(query)
     ]);
+
+    // Transform response to ensure all necessary fields are included
+    const formattedTemplates = templates.map(template => ({
+      id: template._id,
+      name: template.name,
+      description: template.description,
+      thumbnail: template.thumbnail, 
+      category: template.category,
+      settings: template.settings,
+      isActive: template.isActive,
+      createdAt: template.createdAt,
+      updatedAt: template.updatedAt
+    }));
 
     res.json({
       success: true,
       data: {
-        templates,
+        templates: formattedTemplates,
         pagination: {
           total,
           page: parseInt(page),
-          pages: Math.ceil(total / limit)
+          pages: Math.ceil(total / limit),
+          hasMore: page < Math.ceil(total / limit)
+        },
+        filters: {
+          category,
+          search,
+          isActive
         }
       }
     });
@@ -1202,7 +1204,8 @@ const getAllTemplates = async (req, res) => {
 const getTemplateById = async (req, res) => {
   try {
     const template = await WidgetTemplate.findById(req.params.id)
-      .populate('createdBy', 'firstName lastName');
+      .select('name description thumbnail category settings isActive createdAt updatedAt')
+      .lean();
 
     if (!template) {
       return res.status(404).json({
@@ -1211,9 +1214,22 @@ const getTemplateById = async (req, res) => {
       });
     }
 
+    // Format response to be consistent with other endpoints
+    const formattedTemplate = {
+      id: template._id,
+      name: template.name,
+      description: template.description,
+      thumbnail: template.thumbnail, // 🖼️ Ensure thumbnail is included
+      category: template.category,
+      settings: template.settings,
+      isActive: template.isActive,
+      createdAt: template.createdAt,
+      updatedAt: template.updatedAt
+    };
+
     res.json({
       success: true,
-      data: template
+      data: formattedTemplate
     });
   } catch (error) {
     console.error('Get template error:', error);
@@ -1238,21 +1254,34 @@ const getActiveTemplates = async (req, res) => {
 
     const [templates, total] = await Promise.all([
       WidgetTemplate.find(query)
-        .select('-createdBy')
+        .select('name description thumbnail category settings createdAt updatedAt') // 🔍 Explicitly select fields we need
         .sort({ createdAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit),
       WidgetTemplate.countDocuments(query)
     ]);
 
+    // Transform response to ensure thumbnail URL is included
+    const formattedTemplates = templates.map(template => ({
+      id: template._id,
+      name: template.name,
+      description: template.description,
+      thumbnail: template.thumbnail, // 🖼️ Ensure thumbnail is included
+      category: template.category,
+      settings: template.settings,
+      createdAt: template.createdAt,
+      updatedAt: template.updatedAt
+    }));
+
     res.json({
       success: true,
       data: {
-        templates,
+        templates: formattedTemplates,
         pagination: {
           total,
           page: parseInt(page),
-          pages: Math.ceil(total / limit)
+          pages: Math.ceil(total / limit),
+          hasMore: page < Math.ceil(total / limit)
         }
       }
     });
@@ -1261,6 +1290,50 @@ const getActiveTemplates = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch active templates! 😢'
+    });
+  }
+};
+
+// Upload thumbnail for widget template 🖼️
+const uploadWidgetThumbnail = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No thumbnail file provided! 🖼️'
+      });
+    }
+
+    // Upload thumbnail to storage
+    const thumbnailUrl = await uploadTemplateThumbnail(req.file);
+
+    // Update widget template with new thumbnail if templateId is provided
+    if (req.params.templateId) {
+      const template = await WidgetTemplate.findById(req.params.templateId);
+      if (!template) {
+        return res.status(404).json({
+          success: false,
+          message: 'Widget template not found! 🔍'
+        });
+      }
+
+      template.thumbnail = thumbnailUrl;
+      await template.save();
+    }
+
+    res.status(200).json({
+      success: true,
+      message: 'Thumbnail uploaded successfully! 🎉',
+      data: {
+        thumbnailUrl,
+        templateId: req.params.templateId
+      }
+    });
+  } catch (error) {
+    console.error('Thumbnail upload error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload thumbnail! 😢'
     });
   }
 };
@@ -1281,5 +1354,6 @@ module.exports = {
   deleteTemplate,
   getAllTemplates,
   getTemplateById,
-  getActiveTemplates
+  getActiveTemplates,
+  uploadWidgetThumbnail
 }; 

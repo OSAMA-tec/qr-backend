@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Chat</title>
+    <style>
+        /* Basic styles */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        
+        /* Simple navbar */
+        .navbar {
+            background: #2196f3;
+            padding: 10px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .nav-btn {
+            padding: 5px 15px;
+            margin: 0 5px;
+            cursor: pointer;
+        }
+        .nav-btn.active {
+            background: white;
+            color: #2196f3;
+        }
+
+        /* Chat layout */
+        .container {
+            display: flex;
+            gap: 20px;
+            height: 80vh;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            width: 300px;
+            border: 1px solid #ddd;
+        }
+        .chat-list {
+            height: calc(100% - 50px);
+            overflow-y: auto;
+        }
+        .chat-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+        }
+        .chat-item:hover {
+            background: #f5f5f5;
+        }
+        .chat-item.active {
+            background: #e3f2fd;
+        }
+        
+        /* Chat area */
+        .chat-area {
+            flex: 1;
+            border: 1px solid #ddd;
+            display: flex;
+            flex-direction: column;
+        }
+        .messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+        .message {
+            margin: 5px 0;
+            padding: 5px 10px;
+            max-width: 70%;
+            border-radius: 4px;
+        }
+        .message.received {
+            background: #f5f5f5;
+            margin-right: auto;
+        }
+        .message.sent {
+            background: #e3f2fd;
+            margin-left: auto;
+        }
+        .input-area {
+            padding: 10px;
+            border-top: 1px solid #ddd;
+            display: flex;
+            gap: 10px;
+        }
+        .input-area input {
+            flex: 1;
+            padding: 5px;
+        }
+        
+        /* New chat form */
+        .new-chat-form {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border: 1px solid #ddd;
+            width: 300px;
+        }
+        .new-chat-form input,
+        .new-chat-form textarea {
+            width: 100%;
+            margin-bottom: 10px;
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <!-- Simple navbar -->
+    <div class="navbar">
+        <button class="nav-btn active" onclick="switchRole('business')">Business</button>
+        <button class="nav-btn" onclick="switchRole('admin')">Admin</button>
+    </div>
+
+    <div class="container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div style="padding: 10px;">
+                <button id="newChatBtn" onclick="toggleNewChat()">New Chat</button>
+            </div>
+            <div id="chatList" class="chat-list"></div>
+        </div>
+
+        <!-- Chat area -->
+        <div class="chat-area">
+            <div id="messages" class="messages"></div>
+            <div class="input-area">
+                <input type="text" id="messageInput" placeholder="Type message..." onkeypress="handleEnter(event)" disabled>
+                <button onclick="sendMessage()" id="sendButton" disabled>Send</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- New chat form -->
+    <div id="newChatForm" class="new-chat-form">
+        <h3>New Chat</h3>
+        <input type="text" id="subject" placeholder="Subject">
+        <textarea id="firstMessage" placeholder="Message"></textarea>
+        <button onclick="createNewChat()">Start Chat</button>
+        <button onclick="toggleNewChat()">Cancel</button>
+    </div>
+
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    
+    <script>
+        // Hardcoded tokens 🔑
+        const tokens = {
+            business: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2NzZiZWRkM2Q5ZWQyNDMyOGY5NGJmOWIiLCJyb2xlIjoiYnVzaW5lc3MiLCJpYXQiOjE3MzYwMDEyNzMsImV4cCI6MTczNjI2MDQ3M30.9NV-IYQz95Cm2TnorwxN7FudQKJijEGukxjiLArSUiA',
+            admin: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2NzZiZTc3OWVhYzIwYTZiODVjNTVjMzQiLCJyb2xlIjoiYWRtaW4iLCJpYXQiOjE3MzYwMDEyNDEsImV4cCI6MTczNjI2MDQ0MX0.mitsqtBiMRN1wrpXz9Pe7m8EUi83dhRUvxg-znfCIbA'
+        };
+
+        // Variables
+        let socket;
+        let currentChat = null;
+        let userRole = 'business';
+        let token = tokens.business;
+        let isConnected = false; // Add connection tracking
+
+        // Switch role
+        function switchRole(role) {
+            console.log('🔄 Switching role to:', role); // Debug log
+            // Update buttons
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // Update role and token
+            userRole = role;
+            token = tokens[role];
+            isConnected = false; // Reset connection status
+
+            // Reset UI
+            currentChat = null;
+            document.getElementById('messages').innerHTML = '';
+            document.getElementById('messageInput').disabled = true;
+            document.getElementById('sendButton').disabled = true;
+
+            // Show/hide new chat button
+            document.getElementById('newChatBtn').style.display = 
+                role === 'business' ? 'block' : 'none';
+
+            // Reconnect socket
+            if (socket) {
+                socket.disconnect();
+            }
+            connectSocket();
+        }
+
+        // Connect socket
+        function connectSocket() {
+            console.log('🔌 Connecting socket...'); // Debug log
+            socket = io('http://localhost:3000', {
+                auth: { token }
+            });
+
+            socket.on('connect', () => {
+                console.log('✅ Connected as ' + userRole);
+                isConnected = true;
+                loadChats();
+            });
+
+            socket.on('connect_error', (error) => {
+                console.error('❌ Socket connection error:', error);
+                isConnected = false;
+            });
+
+            socket.on('disconnect', () => {
+                console.log('🔌 Disconnected from socket');
+                isConnected = false;
+            });
+
+            socket.on('message:received', (data) => {
+                console.log('📩 Message received:', data);
+                if (currentChat === data.conversation) {
+                    appendMessage(data.message, 'received');
+                }
+                loadChats();
+            });
+        }
+
+        // Load chats
+        async function loadChats() {
+            try {
+                const endpoint = userRole === 'admin' ? 'admin' : 'business';
+                const response = await fetch(`http://localhost:3000/api/${endpoint}/conversations`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                const data = await response.json();
+                
+                const list = document.getElementById('chatList');
+                list.innerHTML = data.data.conversations.map(chat => `
+                    <div class="chat-item ${chat.id === currentChat ? 'active' : ''}" 
+                         onclick="selectChat('${chat.id}')">
+                        <div>${chat.subject}</div>
+                        <small>${chat.lastMessage ? chat.lastMessage.content.text : 'No messages'}</small>
+                        ${chat.unreadCount ? `<span>${chat.unreadCount}</span>` : ''}
+                    </div>
+                `).join('');
+            } catch (error) {
+                console.error('Failed to load chats:', error);
+            }
+        }
+
+        // Select chat
+        async function selectChat(id) {
+            console.log('🎯 Selecting chat:', id);
+            currentChat = id;
+            
+            // Enable input
+            const messageInput = document.getElementById('messageInput');
+            const sendButton = document.getElementById('sendButton');
+            messageInput.disabled = false;
+            sendButton.disabled = false;
+            
+            console.log('🔓 Input enabled:', !messageInput.disabled);
+            
+            try {
+                const endpoint = userRole === 'admin' ? 'admin' : 'business';
+                const response = await fetch(`http://localhost:3000/api/${endpoint}/conversations/${id}/messages`, {
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                const data = await response.json();
+                
+                const messagesDiv = document.getElementById('messages');
+                messagesDiv.innerHTML = data.data.messages.map(msg => `
+                    <div class="message ${msg.sender.role === userRole ? 'sent' : 'received'}">
+                        ${msg.content.text}
+                        <small>${new Date(msg.createdAt).toLocaleTimeString()}</small>
+                    </div>
+                `).join('');
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+                
+                // Mark as read
+                await fetch(`http://localhost:3000/api/${endpoint}/conversations/${id}/read`, {
+                    method: 'POST',
+                    headers: { Authorization: `Bearer ${token}` }
+                });
+                
+                loadChats();
+            } catch (error) {
+                console.error('Failed to load messages:', error);
+            }
+        }
+
+        // Send message
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            console.log('📤 Trying to send message:', { currentChat, message, isConnected });
+            
+            if (!isConnected) {
+                alert('Not connected to server. Please wait...');
+                return;
+            }
+            
+            if (!currentChat) {
+                alert('Please select a chat first');
+                return;
+            }
+            
+            if (!message) {
+                alert('Please type a message');
+                return;
+            }
+            
+            try {
+                socket.emit('message:send', {
+                    conversationId: currentChat,
+                    content: { text: message }
+                });
+                
+                appendMessage({ 
+                    content: { text: message }, 
+                    createdAt: new Date(),
+                    sender: { role: userRole }
+                }, 'sent');
+                
+                input.value = '';
+                console.log('✅ Message sent successfully');
+            } catch (error) {
+                console.error('❌ Failed to send message:', error);
+                alert('Failed to send message. Please try again.');
+            }
+        }
+
+        // Append message
+        function appendMessage(message, type) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            messageDiv.innerHTML = `
+                ${message.content.text}
+                <small>${new Date(message.createdAt).toLocaleTimeString()}</small>
+            `;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Toggle new chat form
+        function toggleNewChat() {
+            const form = document.getElementById('newChatForm');
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        }
+
+        // Create new chat
+        async function createNewChat() {
+            const subject = document.getElementById('subject').value.trim();
+            const message = document.getElementById('firstMessage').value.trim();
+            
+            if (!subject || !message) {
+                alert('Please fill all fields');
+                return;
+            }
+            
+            try {
+                const response = await fetch('http://localhost:3000/api/business/conversations', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ subject, message })
+                });
+                
+                const data = await response.json();
+                if (data.success) {
+                    toggleNewChat();
+                    selectChat(data.data.conversationId);
+                    document.getElementById('subject').value = '';
+                    document.getElementById('firstMessage').value = '';
+                }
+            } catch (error) {
+                console.error('Failed to create chat:', error);
+            }
+        }
+
+        // Handle enter key
+        function handleEnter(event) {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault();
+                sendMessage();
+            }
+        }
+
+        // Initialize
+        connectSocket();
+    </script>
+</body>
+</html>

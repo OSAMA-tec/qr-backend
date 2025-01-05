@@ -28,10 +28,6 @@ const widgetTemplateSchema = new mongoose.Schema({
   },
   category: {
     type: String,
-    enum: {
-      values: ['popup', 'banner', 'sidebar', 'floating'],
-      message: 'Invalid category! Must be one of: popup, banner, sidebar, floating'
-    },
     default: 'popup'
   },
   isActive: {
@@ -51,7 +47,6 @@ const widgetTemplateSchema = new mongoose.Schema({
         height: Number,
         position: {
           type: String,
-          enum: ['top', 'bottom', 'hidden'],
           default: 'top'
         }
       },
@@ -66,7 +61,6 @@ const widgetTemplateSchema = new mongoose.Schema({
         },
         fontWeight: {
           type: String,
-          enum: ['normal', 'bold', 'bolder'],
           default: 'bold'
         }
       }
@@ -83,7 +77,6 @@ const widgetTemplateSchema = new mongoose.Schema({
         },
         fontWeight: {
           type: String,
-          enum: ['normal', 'bold', 'bolder'],
           default: 'bold'
         }
       },
@@ -101,17 +94,14 @@ const widgetTemplateSchema = new mongoose.Schema({
     qrCode: {
       size: {
         type: String,
-        enum: ['small', 'medium', 'large'],
         default: 'medium'
       },
       position: {
         type: String,
-        enum: ['left', 'center', 'right'],
         default: 'center'
       },
       style: {
         type: String,
-        enum: ['standard', 'rounded', 'dots'],
         default: 'standard'
       },
       backgroundColor: {
@@ -128,7 +118,6 @@ const widgetTemplateSchema = new mongoose.Schema({
       },
       errorCorrectionLevel: {
         type: String,
-        enum: ['L', 'M', 'Q', 'H'],
         default: 'M'
       }
     },
@@ -145,7 +134,6 @@ const widgetTemplateSchema = new mongoose.Schema({
           },
           buttonStyle: {
             type: String,
-            enum: ['black', 'white', 'outline'],
             default: 'black'
           }
         },
@@ -156,14 +144,12 @@ const widgetTemplateSchema = new mongoose.Schema({
           },
           buttonStyle: {
             type: String,
-            enum: ['black', 'white', 'outline'],
             default: 'black'
           }
         }
       },
       position: {
         type: String,
-        enum: ['top', 'bottom'],
         default: 'bottom'
       }
     },
@@ -171,7 +157,6 @@ const widgetTemplateSchema = new mongoose.Schema({
       layout: {
         type: {
           type: String,
-          enum: ['standard', 'compact', 'full-width'],
           default: 'standard'
         },
         spacing: {
@@ -228,12 +213,10 @@ const widgetTemplateSchema = new mongoose.Schema({
       typography: {
         fontFamily: {
           type: String,
-          enum: ['Arial', 'Helvetica', 'Inter', 'Roboto', 'Open Sans'],
           default: 'Inter'
         },
         scale: {
           type: String,
-          enum: ['small', 'medium', 'large'],
           default: 'medium'
         }
       },
@@ -250,7 +233,6 @@ const widgetTemplateSchema = new mongoose.Schema({
         },
         intensity: {
           type: String,
-          enum: ['soft', 'medium', 'strong'],
           default: 'medium'
         }
       }
@@ -273,12 +255,10 @@ const widgetTemplateSchema = new mongoose.Schema({
     display: {
       position: {
         type: String,
-        enum: ['top-left', 'top-right', 'bottom-left', 'bottom-right', 'center'],
         default: 'bottom-right'
       },
       animation: {
         type: String,
-        enum: ['fade', 'slide', 'bounce'],
         default: 'fade'
       },
       timing: {

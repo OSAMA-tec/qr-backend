@@ -17,7 +17,8 @@ const {
   deleteTemplate,
   getAllTemplates,
   getTemplateById,
-  getActiveTemplates
+  getActiveTemplates,
+  uploadWidgetThumbnail
 } = require('../controllers/widget.controller');
 
 // Validation middleware 🔍
@@ -121,10 +122,24 @@ const isBusiness = (req, res, next) => {
 };
 
 // Configure multer for file uploads 📁
-const templateUpload = upload.fields([
-  { name: 'thumbnail', maxCount: 1 },
-  { name: 'icon', maxCount: 1 }
-]);
+const thumbnailUpload = upload.single('thumbnail');
+
+// Thumbnail upload routes 🖼️
+router.post('/admin/templates/thumbnail', 
+  authMiddleware,
+  isAdmin,
+  csrfProtection,
+  thumbnailUpload,
+  uploadWidgetThumbnail
+);
+
+router.post('/admin/templates/:templateId/thumbnail', 
+  authMiddleware,
+  isAdmin,
+  csrfProtection,
+  thumbnailUpload,
+  uploadWidgetThumbnail
+);
 
 // Public routes 🌐
 router.get('/:businessId/config', getWidgetConfig);
@@ -133,7 +148,7 @@ router.post('/claim-voucher', csrfProtection, claimVoucher);
 // Business routes 💼
 router.use('/business', authMiddleware, isBusiness);
 router.get('/business/customize', getCustomizationOptions);
-router.put('/business/customize', csrfProtection, templateUpload, updateWidgetAppearance);
+router.put('/business/customize', csrfProtection, validateWidgetTemplate, updateWidgetAppearance);
 router.get('/business/embed-code', getEmbedCode);
 router.get('/business/widget', getBusinessOwnWidget);
 
@@ -149,7 +164,8 @@ router.get('/admin/businesses/:businessId', getBusinessWidgetDetails);
 // Template management routes for admin 🎨
 router.post('/admin/templates', 
   csrfProtection,
-  templateUpload,
+  authMiddleware,
+  isAdmin,
   validateWidgetTemplate,
   createTemplate
 );
@@ -159,7 +175,8 @@ router.get('/admin/templates/:id', getTemplateById);
 
 router.put('/admin/templates/:id', 
   csrfProtection,
-  templateUpload,
+  authMiddleware,
+  isAdmin,
   validateWidgetTemplate,
   updateTemplate
 );
