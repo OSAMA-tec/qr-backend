@@ -27,9 +27,7 @@
 <% } %>
 
 <!-- Registration Form 📝 -->
-<form action="/popup/claim-voucher" method="POST">
-    <input type="hidden" name="voucherId" value="<%= voucher.id %>">
-    
+<form action="/api/popup/voucher/<%= voucher.id %>/claim" method="POST">
     <div class="form-group">
         <label class="form-label" for="firstName">First Name</label>
         <input 

@@ -952,11 +952,6 @@ const userRegistrationValidation = [
     .notEmpty().withMessage('Gender is required! 👥')
     .isIn(['male', 'female', 'other', 'prefer_not_to_say'])
     .withMessage('Invalid gender selection'),
-
-  body('voucherId')
-    .notEmpty().withMessage('Voucher ID is required! 🎫')
-    .isMongoId().withMessage('Invalid voucher ID format'),
-
   handleValidationErrors
 ];
 

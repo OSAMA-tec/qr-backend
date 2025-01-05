@@ -5,6 +5,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const http = require('http'); // Add http for socket.io
+const path = require('path'); // Add path for views directory
 require('dotenv').config();
 
 // Import routes and middleware 🛣️
@@ -37,6 +38,10 @@ const io = socketIO(server, {
     credentials: true
   }
 });
+
+// View engine setup 🎨
+app.set('views', path.join(__dirname, '..', 'views')); // Set views directory
+app.set('view engine', 'ejs'); // Set EJS as view engine
 
 // Middleware 🛠️
 app.use(express.json());

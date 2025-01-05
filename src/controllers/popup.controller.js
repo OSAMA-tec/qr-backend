@@ -6,7 +6,7 @@ const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const QRCode = require('qrcode');
 
-// Get voucher popup details & render form 🎫
+// Get voucher details & show get voucher button 🎫
 const getVoucherPopup = async (req, res) => {
   try {
     const { voucherId } = req.params;
@@ -14,9 +14,7 @@ const getVoucherPopup = async (req, res) => {
     // Find active voucher with widget template
     const voucher = await Coupon.findOne({
       _id: voucherId,
-      isActive: true,
-      startDate: { $lte: new Date() },
-      endDate: { $gte: new Date() }
+      isActive: true
     }).populate([
       {
         path: 'businessId',
@@ -45,8 +43,8 @@ const getVoucherPopup = async (req, res) => {
     const widgetSettings = voucher.businessId.businessProfile.widgetSettings || {};
     const templateSettings = voucher.widgetTemplateId?.settings || {};
 
-    // Render registration form
-    res.render('voucher-form', {
+    // Render voucher details view
+    res.render('voucher-details', {
       layout: 'popup',
       voucher: {
         id: voucher._id,
@@ -69,7 +67,68 @@ const getVoucherPopup = async (req, res) => {
   } catch (error) {
     console.error('Get voucher popup error:', error);
     res.render('error', {
-      message: 'Failed to load voucher form! 😢',
+      message: 'Failed to load voucher details! 😢',
+      layout: 'popup'
+    });
+  }
+};
+
+// Show registration form 📝
+const getVoucherForm = async (req, res) => {
+  try {
+    const { voucherId } = req.params;
+
+    // Find active voucher with widget template
+    const voucher = await Coupon.findOne({
+      _id: voucherId,
+      isActive: true
+    }).populate([
+      {
+        path: 'businessId',
+        select: 'businessProfile.businessName businessProfile.logo businessProfile.widgetSettings'
+      },
+      {
+        path: 'widgetTemplateId',
+        select: 'name category settings design content'
+      }
+    ]);
+
+    if (!voucher) {
+      return res.render('error', {
+        message: 'Voucher not found or expired! 🚫',
+        layout: 'popup'
+      });
+    }
+
+    // Get widget settings
+    const widgetSettings = voucher.businessId.businessProfile.widgetSettings || {};
+    const templateSettings = voucher.widgetTemplateId?.settings || {};
+
+    // Render registration form
+    res.render('voucher-form', {
+      layout: 'popup',
+      voucher: {
+        id: voucher._id,
+        title: voucher.title,
+        description: voucher.description,
+        discountType: voucher.discountType,
+        discountValue: voucher.discountValue,
+        expiryDate: voucher.endDate,
+      },
+      business: {
+        name: voucher.businessId.businessProfile.businessName,
+        logo: voucher.businessId.businessProfile.logo
+      },
+      design: {
+        ...templateSettings.design,
+        ...widgetSettings.colors,
+        logo: voucher.businessId.businessProfile.logo
+      }
+    });
+  } catch (error) {
+    console.error('Get voucher form error:', error);
+    res.render('error', {
+      message: 'Failed to load registration form! 😢',
       layout: 'popup'
     });
   }
@@ -78,6 +137,7 @@ const getVoucherPopup = async (req, res) => {
 // Register user and claim voucher 📝
 const registerAndClaimVoucher = async (req, res) => {
   try {
+    const { voucherId } = req.params;
     const {
       firstName,
       lastName,
@@ -85,8 +145,7 @@ const registerAndClaimVoucher = async (req, res) => {
       password,
       phoneNumber,
       age,
-      gender,
-      voucherId
+      gender
     } = req.body;
 
     // Check if user exists
@@ -96,7 +155,8 @@ const registerAndClaimVoucher = async (req, res) => {
       return res.render('voucher-form', {
         layout: 'popup',
         error: 'Email already registered! Please login to claim voucher. 📧',
-        formData: req.body // Return form data for re-filling
+        formData: req.body,
+        voucherId // Pass voucherId back to form
       });
     }
 
@@ -137,14 +197,15 @@ const registerAndClaimVoucher = async (req, res) => {
 
     // Generate claim ID and redirect
     const claimId = crypto.randomBytes(16).toString('hex');
-    res.redirect(`/popup/claimed-voucher/${claimId}?userId=${user._id}&voucherId=${voucherId}`);
+    res.redirect(`/api/popup/claimed-voucher/${claimId}?userId=${user._id}&voucherId=${voucherId}`);
 
   } catch (error) {
     console.error('Register and claim error:', error);
     res.render('voucher-form', {
       layout: 'popup',
       error: 'Registration failed! Please try again. 😢',
-      formData: req.body // Return form data for re-filling
+      formData: req.body,
+      voucherId: req.params.voucherId // Pass voucherId back to form
     });
   }
 };
@@ -243,6 +304,7 @@ const getClaimedVoucher = async (req, res) => {
 
 module.exports = {
   getVoucherPopup,
+  getVoucherForm,
   registerAndClaimVoucher,
   getClaimedVoucher
 }; 
