@@ -84,6 +84,10 @@ const couponSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  usedTrue: {
+    type: Boolean,
+    default: false
+  },
   usageLimit: {
     perCoupon: {
       type: Number,

@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voucher Popup 🎫</title>
+    
+    <!-- 📦 Dependencies -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@6.5.95/css/materialdesignicons.min.css">
+    
+    <script>
+        // 🎨 Tailwind Config
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    keyframes: {
+                        shimmer: {
+                            '100%': { transform: 'translateX(100%)' }
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* 🎨 Custom Styles */
+        body {
+            background: transparent;
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 1rem;
+        }
+
+        .popup-card {
+            animation: popup 0.3s ease-out;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1),
+                       0 8px 10px -6px rgba(0, 0, 0, 0.1);
+        }
+
+        @keyframes popup {
+            from {
+                opacity: 0;
+                transform: translateY(20px) scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        .discount-badge {
+            background: rgba(0, 0, 0, 0.05);
+            backdrop-filter: blur(8px);
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1),
+                       0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .shimmer {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .shimmer::after {
+            position: absolute;
+            top: 0;
+            right: 0;
+            bottom: 0;
+            left: 0;
+            transform: translateX(-100%);
+            background-image: linear-gradient(
+                90deg,
+                rgba(255, 255, 255, 0) 0,
+                rgba(255, 255, 255, 0.2) 20%,
+                rgba(255, 255, 255, 0.5) 60%,
+                rgba(255, 255, 255, 0)
+            );
+            animation: shimmer 2s infinite;
+            content: '';
+        }
+
+        @keyframes shimmer {
+            100% {
+                transform: translateX(100%);
+            }
+        }
+
+        .hover-scale {
+            transition: transform 0.2s ease;
+        }
+
+        .hover-scale:hover {
+            transform: scale(1.02);
+        }
+
+        .btn-claim {
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-claim::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(rgba(255,255,255,0.1), rgba(255,255,255,0));
+            transform: translateY(-100%);
+            transition: transform 0.3s ease;
+        }
+
+        .btn-claim:hover::after {
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <!-- 🎫 Voucher Card -->
+    <div class="popup-card bg-white rounded-xl max-w-sm w-full relative hover-scale" id="voucherCard">
+        <!-- ❌ Close Button -->
+        <button onclick="closePopup()" 
+                class="absolute -top-3 -right-3 bg-white rounded-full p-2 shadow-lg hover:scale-110 transition-all duration-300 z-10 group">
+            <i class="mdi mdi-close text-xl group-hover:rotate-90 transition-transform duration-300"></i>
+        </button>
+
+        <!-- 🎨 Card Content -->
+        <div class="p-8 space-y-6" id="cardContent">
+            <!-- Loading Skeleton -->
+            <div class="animate-pulse space-y-6">
+                <div class="h-8 bg-gray-200 rounded-lg w-3/4 shimmer"></div>
+                <div class="space-y-2">
+                    <div class="h-4 bg-gray-200 rounded w-full shimmer"></div>
+                    <div class="h-4 bg-gray-200 rounded w-5/6 shimmer"></div>
+                </div>
+                <div class="flex justify-center">
+                    <div class="h-16 bg-gray-200 rounded-full w-2/3 shimmer"></div>
+                </div>
+                <div class="h-5 bg-gray-200 rounded w-1/2 mx-auto shimmer"></div>
+                <div class="h-12 bg-gray-200 rounded-lg shimmer"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 🔄 Load Voucher Data with Auto-refresh
+        let refreshInterval;
+        
+        async function loadVoucherData() {
+            try {
+                const response = await fetch('http://localhost:3000/api/popup/voucher/business/676bedd3d9ed24328f94bf9b');
+                const data = await response.json();
+                
+                if (data.success) {
+                    renderVoucher(data.data);
+                    applyDesign(data.data.design);
+                } else {
+                    showError('Failed to load voucher details');
+                }
+            } catch (error) {
+                console.error('Failed to load voucher:', error);
+                showError('Connection error. Retrying...');
+            }
+        }
+
+        // 🎨 Render Voucher with Enhanced Design
+        function renderVoucher(data) {
+            const content = document.getElementById('cardContent');
+            
+            // Format expiry date
+            const expiryDate = new Date(data.voucher.expiryDate);
+            const timeLeft = getTimeLeft(expiryDate);
+            
+            content.innerHTML = `
+                <!-- 🏷️ Title -->
+                <div class="text-2xl font-bold mb-3 text-center">
+                    ${data.voucher.title}
+                </div>
+
+                <!-- 📝 Description -->
+                <p class="text-gray-600 text-sm text-center leading-relaxed">
+                    ${data.voucher.description}
+                </p>
+
+                <!-- 💰 Discount -->
+                <div class="flex items-center justify-center my-8">
+                    <div class="discount-badge px-8 py-4 rounded-full text-3xl font-bold flex items-center">
+                        <i class="mdi mdi-tag-outline mr-2 text-2xl"></i>
+                        ${data.voucher.discountValue}${data.voucher.discountType === 'percentage' ? '%' : '$'} OFF
+                    </div>
+                </div>
+
+                <!-- ⏰ Expiry -->
+                <div class="flex items-center justify-center text-sm text-gray-500 bg-gray-50 py-2 px-4 rounded-full mx-auto w-fit">
+                    <i class="mdi mdi-clock-outline mr-2"></i>
+                    ${timeLeft}
+                </div>
+
+                <!-- 🎯 Claim Button -->
+                <button onclick="claimVoucher('${data.voucher.id}')" 
+                        class="btn-claim w-full mt-6 bg-black text-white py-4 rounded-lg font-semibold flex items-center justify-center group">
+                    <i class="mdi mdi-ticket-percent mr-2 text-xl group-hover:rotate-12 transition-transform"></i>
+                    Claim Your Voucher Now
+                </button>
+
+                <!-- 🔄 Auto-refresh Notice -->
+                <div class="text-xs text-gray-400 text-center mt-4">
+                    Auto-refreshing every 30 seconds
+                </div>
+            `;
+        }
+
+        // ⏰ Get Time Left
+        function getTimeLeft(expiryDate) {
+            const now = new Date();
+            const diff = expiryDate - now;
+            
+            if (diff <= 0) return 'Expired';
+            
+            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+            
+            if (days > 0) {
+                return `Expires in ${days} days${hours > 0 ? ` ${hours} hours` : ''}`;
+            }
+            return `Expires in ${hours} hours`;
+        }
+
+        // 🎨 Apply Design Settings with Enhanced Effects
+        function applyDesign(design) {
+            const card = document.getElementById('voucherCard');
+            const content = document.getElementById('cardContent');
+            
+            // Apply colors with transition
+            card.style.transition = 'all 0.3s ease';
+            card.style.backgroundColor = design.colors.background;
+            content.style.color = design.colors.text;
+            
+            // Apply border radius
+            card.style.borderRadius = `${design.borderRadius}px`;
+            
+            // Apply shadow with intensity
+            if (design.shadow.enabled) {
+                const shadowIntensity = {
+                    light: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)',
+                    medium: '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)',
+                    heavy: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)'
+                }[design.shadow.intensity];
+                
+                card.style.boxShadow = shadowIntensity;
+            }
+            
+            // Apply spacing with layout type
+            const paddingScale = {
+                compact: 16,
+                standard: 24,
+                spacious: 32
+            }[design.layout.type] || 24;
+            
+            content.style.padding = `${paddingScale}px`;
+        }
+
+        // ❌ Show Error
+        function showError(message) {
+            const content = document.getElementById('cardContent');
+            content.innerHTML = `
+                <div class="text-center text-red-500">
+                    <i class="mdi mdi-alert-circle-outline text-4xl mb-2"></i>
+                    <p>${message}</p>
+                </div>
+            `;
+        }
+
+        // 🎯 Claim Voucher with Animation
+        function claimVoucher(voucherId) {
+            const btn = event.currentTarget;
+            btn.classList.add('opacity-75', 'cursor-not-allowed');
+            btn.innerHTML = '<i class="mdi mdi-loading mdi-spin mr-2"></i> Claiming...';
+            
+            setTimeout(() => {
+                window.location.href = `/api/popup/voucher/business/${voucherId}/claim`;
+            }, 500);
+        }
+
+        // ❌ Close Popup with Animation
+        function closePopup() {
+            document.body.style.opacity = '0';
+            document.body.style.transform = 'scale(0.95)';
+            document.body.style.transition = 'all 0.3s ease';
+            
+            setTimeout(() => {
+                window.close();
+            }, 300);
+        }
+
+        // 🚀 Initialize with Auto-refresh
+        function initialize() {
+            loadVoucherData();
+            
+            // Refresh every 30 seconds
+            refreshInterval = setInterval(loadVoucherData, 30000);
+            
+            // Clean up on page hide/unload
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    clearInterval(refreshInterval);
+                } else {
+                    loadVoucherData();
+                    refreshInterval = setInterval(loadVoucherData, 30000);
+                }
+            });
+        }
+
+        // Start the app
+        initialize();
+    </script>
+</body>
+</html> 

@@ -9,12 +9,15 @@ const QRCode = require('qrcode');
 // Get voucher details 🎫
 const getVoucherPopup = async (req, res) => {
   try {
-    const { voucherId } = req.params;
+    const { businessId } = req.params;
 
     // Find active voucher with widget template
     const voucher = await Coupon.findOne({
-      _id: voucherId,
-      isActive: true
+      businessId,
+      isActive: true,
+      usedTrue: true,
+      // startDate: { $lte: new Date() },
+      // endDate: { $gte: new Date() }
     }).populate([
       {
         path: 'businessId',
@@ -29,13 +32,13 @@ const getVoucherPopup = async (req, res) => {
     if (!voucher) {
       return res.status(404).json({
         success: false,
-        message: 'Voucher not found or expired! 🚫'
+        message: 'No active voucher found! 🚫'
       });
     }
 
     // Increment views counter
     await Coupon.updateOne(
-      { _id: voucherId },
+      { _id: voucher._id },
       { $inc: { 'analytics.views': 1 } }
     );
 
@@ -78,7 +81,7 @@ const getVoucherPopup = async (req, res) => {
 // Register and claim voucher 📝
 const registerAndClaimVoucher = async (req, res) => {
   try {
-    const { voucherId } = req.params;
+    const { businessId } = req.params;
     const { firstName, lastName, email, password, phoneNumber, age, gender } = req.body;
 
     // Check if user exists
@@ -91,16 +94,19 @@ const registerAndClaimVoucher = async (req, res) => {
       });
     }
 
-    // Find voucher and business
+    // Find active voucher
     const voucher = await Coupon.findOne({
-      _id: voucherId,
-      isActive: true
-    }).select('businessId');
+      businessId,
+      isActive: true,
+      usedTrue: true,
+      // startDate: { $lte: new Date() },
+      // endDate: { $gte: new Date() }
+    });
 
     if (!voucher) {
       return res.status(404).json({
         success: false,
-        message: 'Voucher not found or inactive! 🚫'
+        message: 'No active voucher found! 🚫'
       });
     }
 
@@ -126,6 +132,12 @@ const registerAndClaimVoucher = async (req, res) => {
     
     await user.save();
 
+    // Increment clicks counter
+    await Coupon.updateOne(
+      { _id: voucher._id },
+      { $inc: { 'analytics.clicks': 1 } }
+    );
+
     // Generate claim ID
     const claimId = crypto.randomBytes(16).toString('hex');
     
@@ -134,7 +146,7 @@ const registerAndClaimVoucher = async (req, res) => {
       data: {
         claimId,
         userId: user._id,
-        voucherId
+        voucherId: voucher._id
       }
     });
 
@@ -143,6 +155,52 @@ const registerAndClaimVoucher = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Registration failed! Please try again. 😢'
+    });
+  }
+};
+
+// Toggle voucher usage status 🔄
+const toggleVoucherUsage = async (req, res) => {
+  try {
+    const { voucherId } = req.params;
+    const  businessId  = req.user.userId;
+    console.log(businessId)
+    // Find current active voucher and deactivate it
+    await Coupon.updateMany(
+      { 
+        businessId,
+        usedTrue: true
+      },
+      { 
+        usedTrue: false
+      }
+    );
+
+    // Activate the requested voucher
+    const voucher = await Coupon.findOneAndUpdate(
+      { _id: voucherId, businessId },
+      { usedTrue: true },
+      { new: true }
+    );
+
+    if (!voucher) {
+      return res.status(404).json({
+        success: false,
+        message: 'Voucher not found! 🚫'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Voucher usage status updated! ✅',
+      data: { voucher }
+    });
+
+  } catch (error) {
+    console.error('Toggle voucher usage error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update voucher status! 😢'
     });
   }
 };
@@ -158,7 +216,8 @@ const getClaimedVoucher = async (req, res) => {
       User.findById(userId),
       Coupon.findOne({
         _id: voucherId,
-        isActive: true
+        isActive: true,
+        usedTrue: true
       }).populate('businessId', 'businessProfile')
     ]);
 
@@ -171,6 +230,17 @@ const getClaimedVoucher = async (req, res) => {
 
     // Generate QR code
     const qrCode = await QRCode.toDataURL(claimId);
+
+    // Increment redemptions counter
+    await Coupon.updateOne(
+      { _id: voucherId },
+      { 
+        $inc: { 
+          'analytics.redemptions': 1,
+          currentUsage: 1
+        }
+      }
+    );
 
     res.json({
       success: true,
@@ -207,5 +277,6 @@ const getClaimedVoucher = async (req, res) => {
 module.exports = {
   getVoucherPopup,
   registerAndClaimVoucher,
-  getClaimedVoucher
+  getClaimedVoucher,
+  toggleVoucherUsage
 }; 
