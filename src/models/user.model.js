@@ -121,7 +121,42 @@ const userSchema = new mongoose.Schema({
 
   // Timestamps
   createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  updatedAt: { type: Date, default: Date.now },
+
+  // 🎫 Track claimed vouchers
+  voucherClaims: [{
+    voucherId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Coupon',
+      required: true
+    },
+    businessId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    claimDate: {
+      type: Date,
+      default: Date.now
+    },
+    claimMethod: {
+      type: String,
+      enum: ['popup', 'qr', 'link'],
+      required: true
+    },
+    status: {
+      type: String,
+      enum: ['claimed', 'redeemed', 'expired'],
+      default: 'claimed'
+    },
+    redeemedDate: Date,
+    expiryDate: Date,
+    analytics: {
+      clickDate: Date,
+      viewDate: Date,
+      redeemDate: Date
+    }
+  }]
 });
 
 // Indexes 📇

@@ -124,7 +124,18 @@ const registerAndClaimVoucher = async (req, res) => {
       guestDetails: {
         claimedFrom: 'popup',
         businessId: voucher.businessId
-      }
+      },
+      // Add voucher claim details 🎫
+      voucherClaims: [{
+        voucherId: voucher._id,
+        businessId: voucher.businessId,
+        claimMethod: 'popup',
+        expiryDate: voucher.endDate,
+        analytics: {
+          clickDate: new Date(),
+          viewDate: new Date()
+        }
+      }]
     });
 
     // Generate verification token
@@ -135,7 +146,12 @@ const registerAndClaimVoucher = async (req, res) => {
     // Increment clicks counter
     await Coupon.updateOne(
       { _id: voucher._id },
-      { $inc: { 'analytics.clicks': 1 } }
+      { 
+        $inc: { 
+          'analytics.clicks': 1,
+          currentUsage: 1
+        }
+      }
     );
 
     // Generate claim ID

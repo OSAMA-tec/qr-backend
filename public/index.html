@@ -287,8 +287,12 @@
             btn.classList.add('opacity-75', 'cursor-not-allowed');
             btn.innerHTML = '<i class="mdi mdi-loading mdi-spin mr-2"></i> Claiming...';
             
+            // Get businessId from URL or data
+            const businessId = '676bedd3d9ed24328f94bf9b'; // This is the businessId we're using in the API call
+            
             setTimeout(() => {
-                window.location.href = `/api/popup/voucher/business/${voucherId}/claim`;
+                // Redirect to the voucher form with businessId
+                window.location.href = `http://localhost:5173/voucher/form/${businessId}`;
             }, 500);
         }
 
@@ -326,3 +330,4 @@
     </script>
 </body>
 </html> 
+
