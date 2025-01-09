@@ -339,7 +339,7 @@ const getCampaignAnalytics = async (req, res) => {
       businessId
     }).select('-formData.customFields');
 
-    // Initialize analytics object with safe defaults
+    // Initialize analytics object with safe defaults 🔄
     const analytics = {
       overview: {
         totalClicks: campaign.analytics?.totalClicks || 0,
@@ -351,17 +351,18 @@ const getCampaignAnalytics = async (req, res) => {
           "0.00",
         averageFormFillTime: campaign.analytics?.averageFormFillTime || 0
       },
-      referralLinks: campaign.referralLinks.map(link => ({
-        code: link.code,
-        influencerName: link.influencerName,
-        platform: link.platform,
+      // Safely handle referralLinks array 🔍
+      referralLinks: (campaign.influencers || []).map(link => ({
+        code: link.referralCode || '',
+        influencerName: link.name || '',
+        platform: link.platform || '',
         analytics: {
-          totalClicks: link.analytics?.totalClicks || 0,
-          uniqueClicks: link.analytics?.uniqueClicks || 0,
-          formViews: link.analytics?.formViews || 0,
-          formSubmissions: link.analytics?.formSubmissions || 0,
-          conversionRate: link.analytics?.totalClicks ? 
-            ((link.analytics.formSubmissions / link.analytics.totalClicks) * 100).toFixed(2) : 
+          totalClicks: link.stats?.clicks || 0,
+          uniqueClicks: link.stats?.uniqueClicks || 0,
+          formViews: link.stats?.formViews || 0,
+          formSubmissions: link.stats?.conversions || 0,
+          conversionRate: link.stats?.clicks ? 
+            ((link.stats.conversions / link.stats.clicks) * 100).toFixed(2) : 
             "0.00"
         }
       })),
@@ -381,14 +382,28 @@ const getCampaignAnalytics = async (req, res) => {
         daily: Array(7).fill(0),
         monthly: Array(12).fill(0)
       },
-      recentLeads: leads.slice(0, 5).map(lead => ({
+      // Safely handle leads array 📊
+      recentLeads: (leads || []).slice(0, 5).map(lead => ({
         id: lead._id,
-        email: lead.formData.email,
-        name: `${lead.formData.firstName} ${lead.formData.lastName}`,
-        submittedAt: lead.analytics.submissionTimestamp,
-        referralCode: lead.referralCode,
-        device: lead.analytics.deviceType
+        email: lead.formData?.email || '',
+        name: `${lead.formData?.firstName || ''} ${lead.formData?.lastName || ''}`.trim(),
+        submittedAt: lead.analytics?.submissionTimestamp || lead.createdAt,
+        referralCode: lead.referralCode || '',
+        device: lead.analytics?.deviceType || 'unknown'
       }))
+    };
+
+    // Add summary stats 📈
+    analytics.summary = {
+      totalLeads: leads.length,
+      conversionRate: analytics.overview.conversionRate,
+      topPlatforms: analytics.referralLinks.reduce((acc, link) => {
+        if (link.platform) {
+          acc[link.platform] = (acc[link.platform] || 0) + link.analytics.formSubmissions;
+        }
+        return acc;
+      }, {}),
+      deviceDistribution: analytics.deviceBreakdown
     };
 
     res.json({
@@ -399,7 +414,8 @@ const getCampaignAnalytics = async (req, res) => {
     console.error('Get campaign analytics error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch campaign analytics! 😢'
+      message: 'Failed to fetch campaign analytics! 😢',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };

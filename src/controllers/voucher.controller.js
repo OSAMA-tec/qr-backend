@@ -535,6 +535,91 @@ const redeemVoucher = async (req, res) => {
   }
 };
 
+// Get claimed voucher users 👥
+const getClaimedVoucherUsers = async (req, res) => {
+  try {
+    const businessId = req.user.userId;
+    const { search, page = 1, limit = 10 } = req.query;
+
+    // Build search query 🔍
+    const query = {
+      'voucherClaims.businessId': businessId
+    };
+
+    // Add search filter if provided 🎯
+    if (search) {
+      query.$or = [
+        { email: new RegExp(search, 'i') },
+        { phoneNumber: new RegExp(search, 'i') },
+        { firstName: new RegExp(search, 'i') },
+        { lastName: new RegExp(search, 'i') }
+      ];
+    }
+
+    // Get users with pagination 📄
+    const [users, totalCount] = await Promise.all([
+      User.find(query)
+        .select('firstName lastName email phoneNumber voucherClaims')
+        .populate({
+          path: 'voucherClaims.voucherId',
+          select: 'title discountType discountValue code'
+        })
+        .sort({ 'voucherClaims.claimDate': -1 })
+        .skip((page - 1) * limit)
+        .limit(parseInt(limit)),
+      User.countDocuments(query)
+    ]);
+
+    // Process user data 🔄
+    const processedUsers = users.map(user => {
+      const userData = user.toObject();
+      
+      // Filter voucher claims for this business
+      userData.voucherClaims = userData.voucherClaims.filter(
+        claim => claim.businessId.toString() === businessId
+      );
+
+      // Add claim stats
+      userData.claimStats = {
+        totalClaims: userData.voucherClaims.length,
+        redeemedClaims: userData.voucherClaims.filter(
+          claim => claim.status === 'redeemed'
+        ).length
+      };
+
+      return userData;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        users: processedUsers,
+        pagination: {
+          total: totalCount,
+          page: parseInt(page),
+          pages: Math.ceil(totalCount / limit)
+        },
+        summary: {
+          totalUsers: totalCount,
+          activeUsers: processedUsers.filter(
+            user => user.voucherClaims.some(claim => claim.status === 'claimed')
+          ).length,
+          redeemedUsers: processedUsers.filter(
+            user => user.voucherClaims.some(claim => claim.status === 'redeemed')
+          ).length
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get claimed voucher users error:', error);
+    res.status(500).json({
+      success: false, 
+      message: 'Failed to fetch claimed voucher users! 😢'
+    });
+  }
+};
+
 module.exports = {
   createVoucher,
   listVouchers,
@@ -543,5 +628,6 @@ module.exports = {
   deleteVoucher,
   toggleVoucherStatus,
   validateVoucher,
-  redeemVoucher
+  redeemVoucher,
+  getClaimedVoucherUsers
 }; 

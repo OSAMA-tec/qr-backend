@@ -8,7 +8,8 @@ const {
   deleteVoucher,
   toggleVoucherStatus,
   validateVoucher,
-  redeemVoucher
+  redeemVoucher,
+  getClaimedVoucherUsers
 } = require('../controllers/voucher.controller');
 
 const {
@@ -39,16 +40,19 @@ router.use(isBusinessMiddleware);
 // Voucher management routes
 router.post('/', csrfProtection, voucherCreationValidation, createVoucher);
 router.get('/', listVouchers);
-router.get('/:id', getVoucherDetails);
-router.put('/:id', csrfProtection, voucherUpdateValidation, updateVoucher);
-router.delete('/:id', csrfProtection, deleteVoucher);
 
-// Voucher status routes
-router.post('/:id/activate', csrfProtection, toggleVoucherStatus);
-router.post('/:id/deactivate', csrfProtection, toggleVoucherStatus);
+// Get claimed voucher users 👥
+router.get('/claimed-users', getClaimedVoucherUsers);
 
 // Voucher validation and redemption
 router.post('/validate', csrfProtection, voucherValidationRules, validateVoucher);
 router.post('/redeem', csrfProtection, voucherRedemptionValidation, redeemVoucher);
+
+// ID specific routes
+router.get('/:id', getVoucherDetails);
+router.put('/:id', csrfProtection, voucherUpdateValidation, updateVoucher);
+router.delete('/:id', csrfProtection, deleteVoucher);
+router.post('/:id/activate', csrfProtection, toggleVoucherStatus);
+router.post('/:id/deactivate', csrfProtection, toggleVoucherStatus);
 
 module.exports = router; 
