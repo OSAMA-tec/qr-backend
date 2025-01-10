@@ -1,5 +1,7 @@
 // Import dependencies 📦
-const router = require('express').Router();
+const express = require('express');
+const multer = require('multer');
+const router = express.Router();
 const authMiddleware = require('../middleware/auth.middleware');
 const { csrfProtection } = require('../middleware/csrf.middleware');
 const { upload } = require('../utils/upload.utils');
@@ -23,6 +25,20 @@ const {
 
 // Validation middleware 🔍
 const validateWidgetTemplate = (req, res, next) => {
+  console.log('Request body:', req.body); // Debug log
+
+  // Parse settings if it's a string
+  if (typeof req.body.settings === 'string') {
+    try {
+      req.body.settings = JSON.parse(req.body.settings);
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid settings JSON format! ⚙️'
+      });
+    }
+  }
+
   const { name, description, category, settings } = req.body;
 
   // Basic validation
@@ -122,14 +138,41 @@ const isBusiness = (req, res, next) => {
 };
 
 // Configure multer for file uploads 📁
-const thumbnailUpload = upload.single('thumbnail');
+const storage = multer.memoryStorage();
+// const upload = multer({ 
+//   storage,
+//   limits: {
+//     fileSize: 5 * 1024 * 1024 // 5MB limit
+//   }
+// });
+
+// Handle multipart data middleware 📦
+const handleMultipartData = (req, res, next) => {
+  console.log('Handling multipart data...'); // Debug log
+  
+  // Parse settings if it's a string
+  if (req.body.settings && typeof req.body.settings === 'string') {
+    try {
+      req.body.settings = JSON.parse(req.body.settings);
+    } catch (error) {
+      console.error('Failed to parse settings:', error);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid settings format! Please check your input. ❌'
+      });
+    }
+  }
+  
+  next();
+};
 
 // Thumbnail upload routes 🖼️
 router.post('/admin/templates/thumbnail', 
   authMiddleware,
   isAdmin,
   csrfProtection,
-  thumbnailUpload,
+  upload.single('thumbnail'),
+  handleMultipartData,
   uploadWidgetThumbnail
 );
 
@@ -137,7 +180,8 @@ router.post('/admin/templates/:templateId/thumbnail',
   authMiddleware,
   isAdmin,
   csrfProtection,
-  thumbnailUpload,
+  upload.single('thumbnail'),
+  handleMultipartData,
   uploadWidgetThumbnail
 );
 
@@ -166,6 +210,8 @@ router.post('/admin/templates',
   csrfProtection,
   authMiddleware,
   isAdmin,
+  upload.single('thumbnail'),
+  handleMultipartData,
   validateWidgetTemplate,
   createTemplate
 );

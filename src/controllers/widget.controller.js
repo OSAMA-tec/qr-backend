@@ -896,12 +896,13 @@ const generateEmbedCode = (businessId) => {
 // Admin: Create widget template 🎨
 const createTemplate = async (req, res) => {
   try {
+    console.log('Creating template with body:', req.body); // Debug log
+
     const {
       name,
       description,
       category,
-      settings,
-      thumbnailUrl // Now we expect thumbnailUrl instead of handling file upload
+      settings
     } = req.body;
 
     // Validate user exists in request
@@ -912,107 +913,11 @@ const createTemplate = async (req, res) => {
       });
     }
 
-    // Validate thumbnail URL is provided
-
-    // Parse and validate settings with defaults
-    let parsedSettings = {
-      branding: {
-        logo: {
-          url: settings?.branding?.logo?.url || '',
-          width: settings?.branding?.logo?.width || 120,
-          height: settings?.branding?.logo?.height || 40,
-          position: settings?.branding?.logo?.position || 'top'
-        },
-        businessName: {
-          show: settings?.branding?.businessName?.show ?? true,
-          fontSize: settings?.branding?.businessName?.fontSize || 24,
-          fontWeight: settings?.branding?.businessName?.fontWeight || 'bold'
-        }
-      },
-      offer: {
-        title: {
-          text: settings?.offer?.title?.text || '15% OFF BILL',
-          fontSize: settings?.offer?.title?.fontSize || 32,
-          fontWeight: settings?.offer?.title?.fontWeight || 'bold'
-        },
-        description: {
-          text: settings?.offer?.description?.text || 'Get reward 15% OFF EVERYTHING! for the first visit!',
-          fontSize: settings?.offer?.description?.fontSize || 16
-        }
-      },
-      qrCode: {
-        size: settings?.qrCode?.size || 'medium',
-        position: settings?.qrCode?.position || 'center',
-        style: settings?.qrCode?.style || 'standard',
-        backgroundColor: settings?.qrCode?.backgroundColor || '#FFFFFF',
-        foregroundColor: settings?.qrCode?.foregroundColor || '#000000',
-        margin: settings?.qrCode?.margin || 20,
-        errorCorrectionLevel: settings?.qrCode?.errorCorrectionLevel || 'M'
-      },
-      walletIntegration: {
-        enabled: settings?.walletIntegration?.enabled ?? true,
-        types: {
-          apple: {
-            enabled: settings?.walletIntegration?.types?.apple?.enabled ?? true,
-            buttonStyle: settings?.walletIntegration?.types?.apple?.buttonStyle || 'black'
-          },
-          google: {
-            enabled: settings?.walletIntegration?.types?.google?.enabled ?? true,
-            buttonStyle: settings?.walletIntegration?.types?.google?.buttonStyle || 'black'
-          }
-        },
-        position: settings?.walletIntegration?.position || 'bottom'
-      },
-      design: {
-        layout: {
-          type: settings?.design?.layout?.type || 'standard',
-          spacing: settings?.design?.layout?.spacing || 20,
-          padding: settings?.design?.layout?.padding || 24
-        },
-        colors: {
-          primary: settings?.design?.colors?.primary || '#000000',
-          secondary: settings?.design?.colors?.secondary || '#FFFFFF',
-          background: settings?.design?.colors?.background || '#FFFFFF',
-          text: settings?.design?.colors?.text || '#000000'
-        },
-        typography: {
-          fontFamily: settings?.design?.typography?.fontFamily || 'Inter',
-          scale: settings?.design?.typography?.scale || 'medium'
-        },
-        borderRadius: settings?.design?.borderRadius || 8,
-        shadow: {
-          enabled: settings?.design?.shadow?.enabled ?? true,
-          intensity: settings?.design?.shadow?.intensity || 'medium'
-        }
-      },
-      pwa: {
-        enabled: settings?.pwa?.enabled ?? true,
-        icon: settings?.pwa?.icon || '',
-        backgroundColor: settings?.pwa?.backgroundColor || '#FFFFFF',
-        themeColor: settings?.pwa?.themeColor || '#000000'
-      },
-      display: {
-        position: settings?.display?.position || 'bottom-right',
-        animation: settings?.display?.animation || 'fade',
-        timing: {
-          delay: settings?.display?.timing?.delay || 0,
-          duration: settings?.display?.timing?.duration || 5000
-        },
-        responsive: {
-          mobile: {
-            enabled: settings?.display?.responsive?.mobile?.enabled ?? true,
-            breakpoint: settings?.display?.responsive?.mobile?.breakpoint || 768
-          },
-          desktop: {
-            enabled: settings?.display?.responsive?.desktop?.enabled ?? true
-          }
-        }
-      },
-      support: {
-        contactNumber: settings?.support?.contactNumber || '',
-        helpText: settings?.support?.helpText || 'In case of technical failures, call:'
-      }
-    };
+    // Get thumbnail URL from file
+    let thumbnailUrl = '';
+    if (req.file) {
+      thumbnailUrl = await uploadTemplateThumbnail(req.file);
+    }
 
     // Create template with validated data
     const template = new WidgetTemplate({
@@ -1021,7 +926,7 @@ const createTemplate = async (req, res) => {
       category,
       thumbnail: thumbnailUrl,
       createdBy: req.user.userId,
-      settings: parsedSettings
+      settings: typeof settings === 'string' ? JSON.parse(settings) : settings
     });
 
     // Save with validation
