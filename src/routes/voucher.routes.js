@@ -9,7 +9,8 @@ const {
   toggleVoucherStatus,
   validateVoucher,
   redeemVoucher,
-  getClaimedVoucherUsers
+  getClaimedVoucherUsers,
+  scanVoucher
 } = require('../controllers/voucher.controller');
 
 const {
@@ -47,7 +48,8 @@ router.get('/claimed-users', getClaimedVoucherUsers);
 // Voucher validation and redemption
 router.post('/validate', csrfProtection, voucherValidationRules, validateVoucher);
 router.post('/redeem', csrfProtection, voucherRedemptionValidation, redeemVoucher);
-
+// QR code scanning endpoint
+router.post('/scan', csrfProtection, voucherValidationRules, scanVoucher);
 // ID specific routes
 router.get('/:id', getVoucherDetails);
 router.put('/:id', csrfProtection, voucherUpdateValidation, updateVoucher);

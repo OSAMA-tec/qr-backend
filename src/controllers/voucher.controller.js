@@ -619,6 +619,68 @@ const getClaimedVoucherUsers = async (req, res) => {
     });
   }
 };
+// Scan and validate QR code 📱
+const scanVoucher = async (req, res) => {
+  try {
+    const { qrData } = req.body;
+    const businessId=req.user.userId
+    // Parse QR data
+    const voucherData = JSON.parse(qrData);
+    
+    // Validate if QR is for voucher
+    if (voucherData.type !== 'voucher') {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid QR code type! 🚫'
+      });
+    }
+    
+    // Check if voucher belongs to scanning business
+    if (voucherData.businessId !== businessId) {
+      return res.status(403).json({
+        success: false,
+        message: 'This voucher is not valid for your business! 🏢'
+      });
+    }
+
+    // Find and validate voucher
+    const voucher = await Coupon.findOne({
+      code: voucherData.code,
+      businessId,
+      isActive: true,
+      startDate: { $lte: new Date() },
+      endDate: { $gte: new Date() }
+    });
+
+    if (!voucher) {
+      return res.status(400).json({
+        success: false,
+        message: 'Voucher is invalid or expired! ⌛'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        voucher: {
+          id: voucher._id,
+          code: voucher.code,
+          discountType: voucher.discountType,
+          discountValue: voucher.discountValue,
+          minimumPurchase: voucher.minimumPurchase,
+          maximumDiscount: voucher.maximumDiscount
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Scan voucher error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to scan voucher! 😢'
+    });
+  }
+};
 
 module.exports = {
   createVoucher,
@@ -629,5 +691,6 @@ module.exports = {
   toggleVoucherStatus,
   validateVoucher,
   redeemVoucher,
-  getClaimedVoucherUsers
+  getClaimedVoucherUsers,
+  scanVoucher
 }; 

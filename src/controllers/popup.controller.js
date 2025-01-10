@@ -227,14 +227,14 @@ const getClaimedVoucher = async (req, res) => {
     const { claimId } = req.params;
     const { userId, voucherId } = req.query;
 
-    // Get user and voucher details
+    // Get user and voucher details with more data 📝
     const [user, voucher] = await Promise.all([
       User.findById(userId),
       Coupon.findOne({
         _id: voucherId,
         isActive: true,
         usedTrue: true
-      }).populate('businessId', 'businessProfile')
+      }).populate('businessId', 'businessProfile businessId')
     ]);
 
     if (!user || !voucher) {
@@ -244,16 +244,61 @@ const getClaimedVoucher = async (req, res) => {
       });
     }
 
-    // Generate QR code
-    const qrCode = await QRCode.toDataURL(claimId);
+    // Create rich QR data object 🔐
+    const qrData = {
+      claimId,                    // Unique claim identifier
+      voucherId: voucher._id,     // Voucher ID
+      code: voucher.code,         // Voucher code
+      businessId: voucher.businessId._id, // Business ID
+      userId: user._id,           // User ID
+      type: 'claimed_voucher',    // Type identifier
+      timestamp: new Date(),      // Claim timestamp
+      expiryDate: voucher.endDate // Expiry date
+    };
 
-    // Increment redemptions counter
+    // Generate secure hash for verification 🔒
+    const dataString = JSON.stringify(qrData);
+    const hash = crypto
+      .createHash('sha256')
+      .update(dataString)
+      .digest('hex');
+
+    // Add hash to QR data
+    qrData.hash = hash;
+
+    // Generate QR code with all data 📱
+    const qrCode = await QRCode.toDataURL(JSON.stringify(qrData));
+
+    // Update voucher analytics 📊
     await Coupon.updateOne(
       { _id: voucherId },
       { 
         $inc: { 
           'analytics.redemptions': 1,
+          'analytics.qrCodeGenerations': 1, // New analytics field
           currentUsage: 1
+        },
+        $push: {
+          'qrHistory': {  // Track QR code generation
+            userId: user._id,
+            generatedAt: new Date(),
+            hash: hash
+          }
+        }
+      }
+    );
+
+    // Update user's voucher claim status
+    await User.updateOne(
+      { 
+        _id: userId,
+        'voucherClaims.voucherId': voucherId 
+      },
+      {
+        $set: {
+          'voucherClaims.$.qrGenerated': true,
+          'voucherClaims.$.qrGeneratedAt': new Date(),
+          'voucherClaims.$.hash': hash
         }
       }
     );
@@ -264,20 +309,34 @@ const getClaimedVoucher = async (req, res) => {
         user: {
           firstName: user.firstName,
           lastName: user.lastName,
-          email: user.email
+          email: user.email,
+          phoneNumber: user.phoneNumber // Added phone
         },
         voucher: {
+          id: voucher._id,
           title: voucher.title,
           description: voucher.description,
           code: voucher.code,
           discountType: voucher.discountType,
           discountValue: voucher.discountValue,
+          minimumPurchase: voucher.minimumPurchase,
+          maximumDiscount: voucher.maximumDiscount,
           expiryDate: voucher.endDate,
-          qrCode
+          usageLimit: voucher.usageLimit,
+          currentUsage: voucher.currentUsage,
+          qrCode,
+          hash  // Include hash for verification
         },
         business: {
+          id: voucher.businessId._id,
           name: voucher.businessId.businessProfile.businessName,
-          logo: voucher.businessId.businessProfile.logo
+          logo: voucher.businessId.businessProfile.logo,
+          location: voucher.businessId.businessProfile.location
+        },
+        claim: {
+          id: claimId,
+          generatedAt: new Date(),
+          status: 'active'
         }
       }
     });
