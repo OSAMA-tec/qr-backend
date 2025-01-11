@@ -658,14 +658,46 @@ const voucherUpdateValidation = [
 
 // Voucher validation rules 🔍
 const voucherValidationRules = [
+  body('qrData')
+    .optional()
+    .custom((value, { req }) => {
+      if (value) {
+        try {
+          const parsedData = JSON.parse(value);
+          // Validate required fields in QR data 🔍
+          if (!parsedData.type || !parsedData.businessId || !parsedData.code) {
+            throw new Error('Invalid QR data format! Missing required fields 🚫');
+          }
+          // Store parsed data for later use
+          req.parsedQrData = parsedData;
+          return true;
+        } catch (error) {
+          throw new Error('Invalid QR data format! Please check your input 🚫');
+        }
+      }
+      return true;
+    }),
+  
   body('code')
-    .trim()
-    .notEmpty()
-    .withMessage('Voucher code is required 🎫'),
+    .custom((value, { req }) => {
+      // If qrData exists, code is not required as it will be extracted from qrData
+      if (!value && !req.body.qrData) {
+        throw new Error('Voucher code is required 🎫');
+      }
+      return true;
+    }),
   
   body('businessId')
-    .isMongoId()
-    .withMessage('Invalid business ID format 🏢'),
+    .custom((value, { req }) => {
+      // If qrData exists, businessId is not required as it will be extracted from qrData
+      if (!value && !req.body.qrData) {
+        throw new Error('Business ID is required 🏢');
+      }
+      if (value && !value.match(/^[0-9a-fA-F]{24}$/)) {
+        throw new Error('Invalid business ID format 🏢');
+      }
+      return true;
+    }),
   
   body('customerId')
     .optional()

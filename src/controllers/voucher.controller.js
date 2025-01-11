@@ -622,20 +622,37 @@ const getClaimedVoucherUsers = async (req, res) => {
 // Scan and validate QR code 📱
 const scanVoucher = async (req, res) => {
   try {
-    const { qrData } = req.body;
-    const businessId=req.user.userId
-    // Parse QR data
-    const voucherData = JSON.parse(qrData);
+    const businessId = req.user.userId;
+    let voucherData;
+
+    // Get voucher data from either parsed QR data or direct request body 🔄
+    if (req.parsedQrData) {
+      voucherData = req.parsedQrData;
+    } else if (req.body.qrData) {
+      try {
+        voucherData = JSON.parse(req.body.qrData);
+      } catch (error) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid QR data format! Please check your input 🚫'
+        });
+      }
+    } else {
+      return res.status(400).json({
+        success: false,
+        message: 'QR data is required! 📱'
+      });
+    }
     
-    // Validate if QR is for voucher
-    if (voucherData.type !== 'voucher') {
+    // Validate QR data type 🏷️
+    if (!['voucher', 'claimed_voucher'].includes(voucherData.type)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid QR code type! 🚫'
       });
     }
     
-    // Check if voucher belongs to scanning business
+    // Check if voucher belongs to scanning business 🏢
     if (voucherData.businessId !== businessId) {
       return res.status(403).json({
         success: false,
@@ -643,7 +660,7 @@ const scanVoucher = async (req, res) => {
       });
     }
 
-    // Find and validate voucher
+    // Find and validate voucher 🔍
     const voucher = await Coupon.findOne({
       code: voucherData.code,
       businessId,
@@ -659,6 +676,37 @@ const scanVoucher = async (req, res) => {
       });
     }
 
+    // Additional validation for claimed vouchers 🎫
+    if (voucherData.type === 'claimed_voucher') {
+      // Verify claim expiry
+      if (new Date(voucherData.expiryDate) < new Date()) {
+        return res.status(400).json({
+          success: false,
+          message: 'Claimed voucher has expired! ⌛'
+        });
+      }
+
+      // Create verification hash using same method as generation 🔒
+      const hashData = { ...voucherData };
+      delete hashData.hash; // Remove hash before creating verification hash
+      const verificationHash = crypto
+        .createHash('sha256')
+        .update(JSON.stringify(hashData))
+        .digest('hex');
+
+      if (verificationHash !== voucherData.hash) {
+        console.log('Hash Verification Failed:', {
+          expected: voucherData.hash,
+          calculated: verificationHash,
+          qrData: hashData
+        });
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid claim signature! Security check failed 🔒'
+        });
+      }
+    }
+
     res.json({
       success: true,
       data: {
@@ -668,7 +716,13 @@ const scanVoucher = async (req, res) => {
           discountType: voucher.discountType,
           discountValue: voucher.discountValue,
           minimumPurchase: voucher.minimumPurchase,
-          maximumDiscount: voucher.maximumDiscount
+          maximumDiscount: voucher.maximumDiscount,
+          type: voucherData.type,
+          claimInfo: voucherData.type === 'claimed_voucher' ? {
+            claimId: voucherData.claimId,
+            userId: voucherData.userId,
+            expiryDate: voucherData.expiryDate
+          } : null
         }
       }
     });
