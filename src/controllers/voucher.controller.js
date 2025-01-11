@@ -705,8 +705,48 @@ const scanVoucher = async (req, res) => {
           message: 'Invalid claim signature! Security check failed 🔒'
         });
       }
+
+      // Get user details if it's a claimed voucher 👤
+      const user = await User.findById(voucherData.userId)
+        .select('firstName lastName email phoneNumber');
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found! 👤'
+        });
+      }
+
+      // Return response with user details
+      return res.json({
+        success: true,
+        data: {
+          voucher: {
+            id: voucher._id,
+            code: voucher.code,
+            discountType: voucher.discountType,
+            discountValue: voucher.discountValue,
+            minimumPurchase: voucher.minimumPurchase,
+            maximumDiscount: voucher.maximumDiscount,
+            type: voucherData.type,
+            claimInfo: {
+              claimId: voucherData.claimId,
+              userId: voucherData.userId,
+              expiryDate: voucherData.expiryDate
+            }
+          },
+          user: {
+            id: user._id,
+            firstName: user.firstName,
+            lastName: user.lastName,
+            email: user.email,
+            phoneNumber: user.phoneNumber || null
+          }
+        }
+      });
     }
 
+    // Return response without user details for non-claimed vouchers
     res.json({
       success: true,
       data: {
@@ -717,12 +757,7 @@ const scanVoucher = async (req, res) => {
           discountValue: voucher.discountValue,
           minimumPurchase: voucher.minimumPurchase,
           maximumDiscount: voucher.maximumDiscount,
-          type: voucherData.type,
-          claimInfo: voucherData.type === 'claimed_voucher' ? {
-            claimId: voucherData.claimId,
-            userId: voucherData.userId,
-            expiryDate: voucherData.expiryDate
-          } : null
+          type: voucherData.type
         }
       }
     });
