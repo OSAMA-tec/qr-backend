@@ -7,17 +7,17 @@ const transactionSchema = new mongoose.Schema({
   couponId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Coupon',
-    required: true
+    
   },
   customerId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    
   },
   businessId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    
   },
 
   // Transaction Details
@@ -27,15 +27,14 @@ const transactionSchema = new mongoose.Schema({
   },
   originalAmount: {
     type: Number,
-    required: true
+    
   },
   discountAmount: {
     type: Number,
-    required: true
+    
   },
   finalAmount: {
     type: Number,
-    required: true
   },
 
   // Transaction Status
@@ -54,7 +53,7 @@ const transactionSchema = new mongoose.Schema({
     },
     coordinates: {
       type: [Number],  // [longitude, latitude]
-      required: true
+      
     },
     address: String
   },
@@ -63,7 +62,7 @@ const transactionSchema = new mongoose.Schema({
   paymentMethod: {
     type: String,
     enum: ['cash', 'card', 'digital_wallet'],
-    required: true
+    default:'cash'
   },
   items: [{
     name: String,
@@ -82,7 +81,7 @@ const transactionSchema = new mongoose.Schema({
   // Notes & References
   referenceNumber: {
     type: String,
-    unique: true
+
   },
   notes: String,
 

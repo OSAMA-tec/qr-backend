@@ -466,18 +466,14 @@ const redeemVoucher = async (req, res) => {
     const { voucherId, customerId, amount, location } = req.body;
     const businessId = req.user.userId;
 
-    // Find and update voucher
-    const voucher = await Coupon.findOneAndUpdate(
-      {
-        _id: voucherId,
-        businessId,
-        isActive: true,
-        startDate: { $lte: new Date() },
-        endDate: { $gte: new Date() }
-      },
-      { $inc: { currentUsage: 1, 'analytics.redemptions': 1 } },
-      { new: true }
-    );
+    // Find and validate voucher with business check 🎫
+    const voucher = await Coupon.findOne({
+      _id: voucherId,
+      businessId,
+      isActive: true,
+      // startDate: { $lte: new Date() },
+      // endDate: { $gte: new Date() }
+    });
 
     if (!voucher) {
       return res.status(400).json({
@@ -486,46 +482,162 @@ const redeemVoucher = async (req, res) => {
       });
     }
 
-    // Calculate discount
+    // Check minimum purchase requirement 💰
+    if (voucher.minimumPurchase && amount < voucher.minimumPurchase) {
+      return res.status(400).json({
+        success: false,
+        message: `Minimum purchase amount of ${voucher.minimumPurchase} required! 💰`
+      });
+    }
+
+    // Find user and validate voucher claim 👤
+    const user = await User.findById(customerId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found! 👤'
+      });
+    }
+
+    // Check if user has claimed this voucher
+    const userClaim = user.voucherClaims.find(
+      claim => claim.voucherId.toString() === voucherId && 
+               claim.businessId.toString() === businessId &&
+               claim.status === 'claimed'
+    );
+
+    if (!userClaim) {
+      return res.status(400).json({
+        success: false,
+        message: 'User has not claimed this voucher! 🚫'
+      });
+    }
+
+    // Check if voucher is already redeemed
+    if (userClaim.status === 'redeemed') {
+      return res.status(400).json({
+        success: false,
+        message: 'Voucher already redeemed! 🔄'
+      });
+    }
+
+    // Check if voucher has expired
+    if (userClaim.expiryDate && new Date(userClaim.expiryDate) < new Date()) {
+      // Update claim status to expired
+      await User.updateOne(
+        { 
+          _id: customerId,
+          'voucherClaims._id': userClaim._id 
+        },
+        { 
+          $set: { 
+            'voucherClaims.$.status': 'expired',
+            'voucherClaims.$.updatedAt': new Date()
+          }
+        }
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: 'Voucher has expired! ⌛'
+      });
+    }
+
+    // Calculate discount amount 💸
     let discountAmount = 0;
     if (voucher.discountType === 'percentage') {
       discountAmount = (amount * voucher.discountValue) / 100;
       if (voucher.maximumDiscount) {
         discountAmount = Math.min(discountAmount, voucher.maximumDiscount);
       }
-    } else if (voucher.discountType === 'fixed') {
-      discountAmount = voucher.discountValue;
+    } else {
+      discountAmount = Math.min(voucher.discountValue, amount);
     }
 
-    // Create transaction record
+    // Create transaction record 📝
     const transaction = new Transaction({
       userId: customerId,
       businessId,
       voucherId,
       amount,
       discountAmount,
-      location
+      location,
+      status: 'completed',
+      redeemedAt: new Date()
     });
 
     await transaction.save();
 
-    // Update analytics
+    // Update user's voucher claim status ✅
+    await User.updateOne(
+      { 
+        _id: customerId,
+        'voucherClaims._id': userClaim._id 
+      },
+      { 
+        $set: { 
+          'voucherClaims.$.status': 'redeemed',
+          'voucherClaims.$.redeemedDate': new Date(),
+          'voucherClaims.$.analytics.redeemDate': new Date(),
+          'voucherClaims.$.transactionId': transaction._id
+        }
+      }
+    );
+
+    // Update voucher usage and analytics 📊
     await Coupon.updateOne(
       { _id: voucherId },
       { 
-        $inc: { 'analytics.totalRevenue': amount },
-        $set: { updatedAt: new Date() }
+        $inc: { 
+          currentUsage: 1,
+          'analytics.redemptions': 1,
+          'analytics.totalRevenue': amount
+        },
+        $set: {
+          usedTrue: true,
+          updatedAt: new Date()
+        }
       }
     );
+
+    // Check if voucher has reached usage limit 🎯
+    if (voucher.usageLimit?.perCoupon && voucher.currentUsage + 1 >= voucher.usageLimit.perCoupon) {
+      await Coupon.updateOne(
+        { _id: voucherId },
+        { $set: { isActive: false } }
+      );
+    }
 
     res.json({
       success: true,
       message: 'Voucher redeemed successfully! 🎉',
       data: {
-        transaction,
-        discountAmount
+        transaction: {
+          id: transaction._id,
+          amount,
+          discountAmount,
+          finalAmount: amount - discountAmount,
+          redeemedAt: transaction.redeemedAt
+        },
+        voucher: {
+          id: voucher._id,
+          code: voucher.code,
+          title: voucher.title,
+          discountApplied: {
+            type: voucher.discountType,
+            value: voucher.discountValue,
+            calculatedAmount: discountAmount
+          }
+        },
+        user: {
+          id: user._id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email
+        }
       }
     });
+
   } catch (error) {
     console.error('Redeem voucher error:', error);
     res.status(500).json({
