@@ -2,6 +2,7 @@
 const User = require('../models/user.model');
 const Transaction = require('../models/transaction.model');
 const { Subscription } = require('../models/subscription.model');
+const mongoose = require('mongoose');
 
 // Get business profile 🏢
 const getBusinessProfile = async (req, res) => {
@@ -88,48 +89,190 @@ const updateBusinessProfile = async (req, res) => {
 const listCustomers = async (req, res) => {
   try {
     const businessId = req.user.userId;
-    const { page = 1, limit = 10, search } = req.query;
+    const { page = 1, limit = 10, search, status } = req.query;
 
-    const query = {
-      'transactions.businessId': businessId
+    // Convert businessId to ObjectId 🔄
+    const businessObjectId = new mongoose.Types.ObjectId(businessId);
+
+    // Build base query for both regular and guest users 🔍
+    const baseQuery = {
+      $or: [
+        { 'voucherClaims.businessId': businessObjectId }, // Regular users with voucher claims
+        { 'guestDetails.businessId': businessObjectId }   // Guest users
+      ]
     };
 
+    // Add search filter if provided 🔎
     if (search) {
-      query.$or = [
-        { firstName: new RegExp(search, 'i') },
-        { lastName: new RegExp(search, 'i') },
-        { email: new RegExp(search, 'i') }
-      ];
+      baseQuery.$and = [{
+        $or: [
+          { firstName: new RegExp(search, 'i') },
+          { lastName: new RegExp(search, 'i') },
+          { email: new RegExp(search, 'i') },
+          { phoneNumber: new RegExp(search, 'i') }
+        ]
+      }];
+    }
+
+    // Add status filter if provided 🏷️
+    if (status) {
+      switch(status) {
+        case 'active':
+          baseQuery['voucherClaims.status'] = 'claimed';
+          break;
+        case 'redeemed':
+          baseQuery['voucherClaims.status'] = 'redeemed';
+          break;
+        case 'expired':
+          baseQuery['voucherClaims.status'] = 'expired';
+          break;
+        case 'guest':
+          baseQuery.isGuest = true;
+          break;
+      }
     }
 
     const skip = (page - 1) * limit;
 
-    // Get customers who have transactions with this business
+    // Get customers with aggregation pipeline 📊
     const customers = await User.aggregate([
+      {
+        $match: baseQuery
+      },
+      // Add default arrays if null 🔄
+      {
+        $addFields: {
+          voucherClaims: {
+            $ifNull: ['$voucherClaims', []]
+          },
+          transactions: []
+        }
+      },
+      // Lookup voucher details 🎫
+      {
+        $lookup: {
+          from: 'coupons',
+          localField: 'voucherClaims.voucherId',
+          foreignField: '_id',
+          as: 'voucherDetails'
+        }
+      },
+      // Lookup transaction details 💳
       {
         $lookup: {
           from: 'transactions',
-          localField: '_id',
-          foreignField: 'userId',
+          let: { userId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userId', '$$userId'] },
+                    { $eq: ['$businessId', businessObjectId] }
+                  ]
+                }
+              }
+            },
+            { $sort: { createdAt: -1 } }
+          ],
           as: 'transactions'
         }
       },
       {
-        $match: query
-      },
-      {
         $project: {
+          _id: 1,
           firstName: 1,
           lastName: 1,
           email: 1,
           phoneNumber: 1,
-          lastVisit: { $max: '$transactions.createdAt' },
-          totalSpent: { $sum: '$transactions.amount' },
-          visitsCount: { $size: '$transactions' }
+          isGuest: 1,
+          guestDetails: 1,
+          createdAt: 1,
+          // Filter voucher claims for this business 🎫
+          voucherClaims: {
+            $filter: {
+              input: '$voucherClaims',
+              as: 'claim',
+              cond: { 
+                $eq: ['$$claim.businessId', businessObjectId]
+              }
+            }
+          },
+          // Calculate customer metrics 📊
+          metrics: {
+            totalSpent: {
+              $sum: {
+                $ifNull: ['$transactions.amount', 0]
+              }
+            },
+            totalDiscounts: {
+              $sum: {
+                $ifNull: ['$transactions.discountAmount', 0]
+              }
+            },
+            visitsCount: {
+              $size: {
+                $ifNull: ['$transactions', []]
+              }
+            },
+            lastVisit: {
+              $max: {
+                $ifNull: ['$transactions.createdAt', null]
+              }
+            },
+            firstVisit: {
+              $min: {
+                $ifNull: ['$transactions.createdAt', null]
+              }
+            },
+            activeClaims: {
+              $size: {
+                $filter: {
+                  input: {
+                    $ifNull: ['$voucherClaims', []]
+                  },
+                  as: 'claim',
+                  cond: { 
+                    $and: [
+                      { $eq: ['$$claim.businessId', businessObjectId] },
+                      { $eq: ['$$claim.status', 'claimed'] }
+                    ]
+                  }
+                }
+              }
+            },
+            redeemedClaims: {
+              $size: {
+                $filter: {
+                  input: {
+                    $ifNull: ['$voucherClaims', []]
+                  },
+                  as: 'claim',
+                  cond: { 
+                    $and: [
+                      { $eq: ['$$claim.businessId', businessObjectId] },
+                      { $eq: ['$$claim.status', 'redeemed'] }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          // Get latest transactions 💰
+          recentTransactions: {
+            $slice: [{
+              $ifNull: ['$transactions', []]
+            }, 5]
+          },
+          // Include voucher details 🎫
+          voucherDetails: 1
         }
       },
       {
-        $sort: { lastVisit: -1 }
+        $sort: { 
+          'metrics.lastVisit': -1,
+          createdAt: -1  // Secondary sort for users without visits
+        }
       },
       {
         $skip: skip
@@ -139,12 +282,77 @@ const listCustomers = async (req, res) => {
       }
     ]);
 
-    const total = await User.countDocuments(query);
+    // Get total count for pagination 📄
+    const total = await User.countDocuments(baseQuery);
+
+    // Process customers to add additional info 🔄
+    const processedCustomers = customers.map(customer => ({
+      id: customer._id,
+      basicInfo: {
+        firstName: customer.firstName,
+        lastName: customer.lastName,
+        email: customer.email,
+        phoneNumber: customer.phoneNumber || null,
+        isGuest: customer.isGuest || false,
+        guestSource: customer.isGuest ? customer.guestDetails?.claimedFrom : null,
+        joinedDate: customer.createdAt
+      },
+      voucherActivity: {
+        claims: (customer.voucherClaims || []).map(claim => {
+          const voucherDetail = customer.voucherDetails?.find(v => 
+            v._id.toString() === claim.voucherId.toString()
+          );
+          return {
+            id: claim._id,
+            voucherId: claim.voucherId,
+            status: claim.status,
+            claimDate: claim.claimDate,
+            redeemedDate: claim.redeemedDate,
+            expiryDate: claim.expiryDate,
+            claimMethod: claim.claimMethod,
+            analytics: claim.analytics,
+            voucherInfo: voucherDetail ? {
+              title: voucherDetail.title,
+              discountType: voucherDetail.discountType,
+              discountValue: voucherDetail.discountValue
+            } : null
+          };
+        }),
+        stats: {
+          activeClaims: customer.metrics.activeClaims || 0,
+          redeemedClaims: customer.metrics.redeemedClaims || 0
+        }
+      },
+      transactionHistory: {
+        totalSpent: customer.metrics.totalSpent || 0,
+        totalDiscounts: customer.metrics.totalDiscounts || 0,
+        visitsCount: customer.metrics.visitsCount || 0,
+        lastVisit: customer.metrics.lastVisit,
+        firstVisit: customer.metrics.firstVisit,
+        recentTransactions: (customer.recentTransactions || []).map(tx => ({
+          id: tx._id,
+          amount: tx.amount,
+          discountAmount: tx.discountAmount,
+          date: tx.createdAt,
+          voucherId: tx.voucherId
+        }))
+      }
+    }));
+
+    // Calculate summary statistics 📊
+    const summary = {
+      total,
+      activeCustomers: processedCustomers.filter(c => c.voucherActivity.stats.activeClaims > 0).length,
+      guestCustomers: processedCustomers.filter(c => c.basicInfo.isGuest).length,
+      totalRevenue: processedCustomers.reduce((sum, c) => sum + (c.transactionHistory.totalSpent || 0), 0),
+      totalDiscounts: processedCustomers.reduce((sum, c) => sum + (c.transactionHistory.totalDiscounts || 0), 0)
+    };
 
     res.json({
       success: true,
       data: {
-        customers,
+        customers: processedCustomers,
+        summary,
         pagination: {
           total,
           page: parseInt(page),
