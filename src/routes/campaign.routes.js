@@ -40,7 +40,7 @@ router.post(
 router.use(authMiddleware);
 router.use(isBusinessMiddleware);
 
-router.post("/", csrfProtection, campaignValidation, createCampaign); // Create campaign
+router.post("/", campaignValidation, createCampaign); // Create campaign
 router.get("/", getAllCampaigns); // Get all campaigns for business
 router.get("/:campaignId/analytics", getCampaignAnalytics); // Get campaign analytics
 
