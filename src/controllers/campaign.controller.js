@@ -151,12 +151,12 @@ const trackCampaignClick = async (req, res) => {
     const userAgent = req.headers['user-agent'];
     const ipAddress = req.ip;
 
-    // Find campaign by referral code
+    // Find campaign by referral code 🔍
     const campaign = await Campaign.findOne({
-      'referralLinks.code': referralCode,
-      status: 'active',
-      startDate: { $lte: new Date() },
-      endDate: { $gte: new Date() }
+      'influencers.referralCode': referralCode,
+      // status: 'active',
+      // startDate: { $lte: new Date() },
+      // endDate: { $gte: new Date() }
     });
 
     if (!campaign) {
@@ -166,46 +166,124 @@ const trackCampaignClick = async (req, res) => {
       });
     }
 
-    // Get referral link index
-    const linkIndex = campaign.referralLinks.findIndex(link => link.code === referralCode);
+    // Get influencer index 👤
+    const influencerIndex = campaign.influencers.findIndex(inf => inf.referralCode === referralCode);
     
-    // Update analytics
-    campaign.referralLinks[linkIndex].analytics.totalClicks++;
-    campaign.analytics.totalClicks++;
+    if (influencerIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invalid referral code! 🚫'
+      });
+    }
 
-    // Track device and location
+    // Track device and location info 📱
     const deviceInfo = detectDevice(userAgent);
     const browserInfo = parseUserAgent(userAgent);
     const location = await getLocationFromIP(ipAddress);
 
-    // Update device stats
-    campaign.referralLinks[linkIndex].analytics.deviceStats[deviceInfo.type]++;
+    // Update influencer stats 📊
+    campaign.influencers[influencerIndex].stats.clicks++;
+    
+    // Update campaign analytics 📈
+    campaign.analytics.totalClicks = (campaign.analytics.totalClicks || 0) + 1;
+    campaign.analytics.uniqueClicks = (campaign.analytics.uniqueClicks || 0) + 1;
+
+    // Track device stats 📱
+    if (!campaign.analytics.deviceStats) {
+      campaign.analytics.deviceStats = {
+        desktop: 0,
+        mobile: 0,
+        tablet: 0
+      };
+    }
     campaign.analytics.deviceStats[deviceInfo.type]++;
 
-    // Update browser stats
+    // Track browser stats 🌐
+    if (!campaign.analytics.browserStats) {
+      campaign.analytics.browserStats = new Map();
+    }
     const browserKey = browserInfo.browser.toLowerCase();
-    campaign.referralLinks[linkIndex].analytics.browserStats.set(
+    campaign.analytics.browserStats.set(
       browserKey,
-      (campaign.referralLinks[linkIndex].analytics.browserStats.get(browserKey) || 0) + 1
+      (campaign.analytics.browserStats.get(browserKey) || 0) + 1
     );
 
+    // Track location stats 🌍
+    if (!campaign.analytics.locationStats) {
+      campaign.analytics.locationStats = new Map();
+    }
+    if (location.country) {
+      const locationKey = location.country.toLowerCase();
+      campaign.analytics.locationStats.set(
+        locationKey,
+        (campaign.analytics.locationStats.get(locationKey) || 0) + 1
+      );
+    }
+
+    // Track time stats ⏰
+    if (!campaign.analytics.timeStats) {
+      campaign.analytics.timeStats = {
+        hourly: Array(24).fill(0),
+        daily: Array(7).fill(0),
+        monthly: Array(12).fill(0)
+      };
+    }
+    const now = new Date();
+    campaign.analytics.timeStats.hourly[now.getHours()]++;
+    campaign.analytics.timeStats.daily[now.getDay()]++;
+    campaign.analytics.timeStats.monthly[now.getMonth()]++;
+
+    // Save all updates 💾
     await campaign.save();
 
-    // Return form configuration
-    res.json({
-      success: true,
-      data: {
-        formConfig: campaign.formConfig,
-        campaignId: campaign._id,
-        businessId: campaign.businessId
+    // Get voucher details for form 🎫
+    const voucher = await Coupon.findById(campaign.voucherId)
+      .select('code title description discountType discountValue minimumPurchase');
+
+    // Prepare response data 📦
+    const responseData = {
+      formConfig: campaign.formConfig || {
+        fields: [
+          { name: 'firstName', type: 'text', required: true },
+          { name: 'lastName', type: 'text', required: true },
+          { name: 'email', type: 'email', required: true },
+          { name: 'phoneNumber', type: 'phone', required: false }
+        ]
+      },
+      campaign: {
+        id: campaign._id,
+        name: campaign.name,
+        type: campaign.type,
+        voucher: voucher ? {
+          code: voucher.code,
+          title: voucher.title,
+          description: voucher.description,
+          discountType: voucher.discountType,
+          discountValue: voucher.discountValue,
+          minimumPurchase: voucher.minimumPurchase
+        } : null
+      },
+      tracking: {
+        deviceType: deviceInfo.type,
+        browser: browserInfo.browser,
+        os: browserInfo.os,
+        location: location,
+        timestamp: now,
+        referralCode: referralCode
       }
-    });
+    };
+    console.log(responseData)
+    // Encode the data as base64 🔐
+    const token = Buffer.from(JSON.stringify(responseData)).toString('base64');
+
+    // Redirect to claim page with token 🔄
+    const claimUrl = `http://localhost:5173/campaign/claim?token=${token}`;
+    res.redirect(claimUrl);
+
   } catch (error) {
     console.error('Track campaign click error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to track campaign click! 😢'
-    });
+    // In case of error, redirect to error page
+    res.redirect(`http://localhost:5173/campaign/error?message=${encodeURIComponent('Failed to process campaign link! 😢')}`);
   }
 };
 
@@ -424,74 +502,132 @@ const getCampaignAnalytics = async (req, res) => {
 const getAllCampaigns = async (req, res) => {
   try {
     const businessId = req.user.userId;
-    const { status, page = 1, limit = 10 } = req.query;
+    const { status, page = 1, limit = 10, search } = req.query;
 
+    // Build query 🔍
     const query = { businessId };
-    if (status) {
-      query.status = status;
+    if (status) query.status = status;
+    if (search) {
+      query.$or = [
+        { name: new RegExp(search, 'i') },
+        { description: new RegExp(search, 'i') }
+      ];
     }
 
+    // Get campaigns with populated data 📦
     const campaigns = await Campaign.find(query)
+      .populate({
+        path: 'voucherId',
+        select: 'code title description discountType discountValue startDate endDate isActive',
+      })
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
-      .limit(limit);
+      .limit(parseInt(limit));
 
     const total = await Campaign.countDocuments(query);
 
-    // Get base URL from environment or default
-    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+    // Process campaigns with proper data structure 🏗️
+    const processedCampaigns = campaigns.map(campaign => {
+      const now = new Date();
+      
+      // Calculate campaign status ⏱️
+      let currentStatus = campaign.status;
+      if (currentStatus === 'active') {
+        if (now < campaign.startDate) {
+          currentStatus = 'scheduled';
+        } else if (now > campaign.endDate) {
+          currentStatus = 'completed';
+        }
+      }
 
+      // Process influencer links with API endpoint format 🔗
+      const influencerLinks = campaign.influencers.map(inf => ({
+        id: inf._id,
+        name: inf.name,
+        type: inf.type,
+        platform: inf.platform,
+        referralCode: inf.referralCode,
+        // Format link as API endpoint
+        referralLink: `http://localhost:3000/api/campaigns/click/${inf.referralCode}`,
+        stats: {
+          clicks: inf.stats?.clicks || 0,
+          conversions: inf.stats?.conversions || 0,
+          revenue: inf.stats?.revenue || 0,
+          conversionRate: inf.stats?.clicks ? 
+            ((inf.stats.conversions / inf.stats.clicks) * 100).toFixed(2) : 
+            "0.00"
+        }
+      }));
+
+      // Format voucher info 🎫
+      const voucherInfo = campaign.voucherId ? {
+        id: campaign.voucherId._id,
+        code: campaign.voucherId.code,
+        title: campaign.voucherId.title,
+        description: campaign.voucherId.description,
+        discountType: campaign.voucherId.discountType,
+        discountValue: campaign.voucherId.discountValue,
+        isActive: campaign.voucherId.isActive,
+        startDate: campaign.voucherId.startDate,
+        endDate: campaign.voucherId.endDate
+      } : null;
+
+      // Calculate performance metrics 📊
+      const performance = {
+        totalClicks: campaign.analytics?.totalClicks || 0,
+        uniqueClicks: campaign.analytics?.uniqueClicks || 0,
+        conversions: campaign.analytics?.conversions || 0,
+        revenue: campaign.analytics?.revenue || 0,
+        conversionRate: campaign.analytics?.uniqueClicks ? 
+          ((campaign.analytics.conversions / campaign.analytics.uniqueClicks) * 100).toFixed(2) : 
+          "0.00",
+        avgOrderValue: campaign.analytics?.conversions ? 
+          (campaign.analytics.revenue / campaign.analytics.conversions).toFixed(2) : 
+          "0.00"
+      };
+
+      return {
+        id: campaign._id,
+        name: campaign.name,
+        description: campaign.description,
+        type: campaign.type,
+        status: currentStatus,
+        startDate: campaign.startDate,
+        endDate: campaign.endDate,
+        voucher: voucherInfo,
+        influencers: influencerLinks,
+        performance,
+        budget: {
+          total: campaign.budget?.total || 0,
+          spent: campaign.budget?.spent || 0,
+          remaining: campaign.budget?.remaining || 0
+        },
+        timeRemaining: campaign.endDate > now ? 
+          Math.ceil((campaign.endDate - now) / (1000 * 60 * 60 * 24)) : 
+          0,
+        createdAt: campaign.createdAt,
+        updatedAt: campaign.updatedAt
+      };
+    });
+
+    // Return formatted response 📬
     res.json({
       success: true,
+      message: 'Campaigns retrieved successfully! 🎉',
       data: {
-        campaigns: campaigns.map(campaign => ({
-          id: campaign._id,
-          name: campaign.name,
-          type: campaign.type,
-          status: campaign.status,
-          startDate: campaign.startDate,
-          endDate: campaign.endDate,
-          description: campaign.description,
-          analytics: {
-            totalClicks: campaign.analytics?.totalClicks || 0,
-            formSubmissions: campaign.analytics?.formSubmissions || 0,
-            conversionRate: campaign.analytics?.totalClicks ? 
-              ((campaign.analytics.formSubmissions / campaign.analytics.totalClicks) * 100).toFixed(2) : 
-              "0.00"
-          },
-          referralLinks: campaign.referralLinks?.map(link => ({
-            code: link.code,
-            influencerName: link.influencerName,
-            platform: link.platform,
-            isActive: link.isActive,
-            shareUrl: `${baseUrl}/ref/${link.code}`, // URL to share
-            customFields: link.customFields || {},
-            analytics: {
-              totalClicks: link.analytics?.totalClicks || 0,
-              uniqueClicks: link.analytics?.uniqueClicks || 0,
-              formSubmissions: link.analytics?.formSubmissions || 0,
-              conversionRate: link.analytics?.totalClicks ? 
-                ((link.analytics.formSubmissions / link.analytics.totalClicks) * 100).toFixed(2) : 
-                "0.00"
-            },
-            createdAt: link.createdAt
-          })) || [],
-          totalLinks: campaign.referralLinks?.length || 0,
-          formConfig: {
-            fields: campaign.formConfig?.fields || [],
-            theme: campaign.formConfig?.theme || {
-              primaryColor: "#007bff",
-              backgroundColor: "#ffffff",
-              textColor: "#333333"
-            }
-          },
-          createdAt: campaign.createdAt,
-          updatedAt: campaign.updatedAt
-        })),
+        campaigns: processedCampaigns,
         pagination: {
           total,
           page: parseInt(page),
-          pages: Math.ceil(total / limit)
+          pages: Math.ceil(total / limit),
+          hasMore: page < Math.ceil(total / limit)
+        },
+        summary: {
+          total,
+          active: processedCampaigns.filter(c => c.status === 'active').length,
+          scheduled: processedCampaigns.filter(c => c.status === 'scheduled').length,
+          completed: processedCampaigns.filter(c => c.status === 'completed').length,
+          paused: processedCampaigns.filter(c => c.status === 'paused').length
         }
       }
     });
@@ -499,7 +635,8 @@ const getAllCampaigns = async (req, res) => {
     console.error('Get all campaigns error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to fetch campaigns! 😢'
+      message: 'Failed to fetch campaigns! 😢',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
@@ -530,7 +667,7 @@ const listCampaigns = async (req, res) => {
           select: 'code title description discountType discountValue startDate endDate isActive',
           populate: {
             path: 'widgetTemplateId',
-            select: 'name category settings thumbnail isActive'
+            select: 'name category  thumbnail isActive'
           }
         })
         .sort({ createdAt: -1 })

@@ -158,7 +158,7 @@
         
         async function loadVoucherData() {
             try {
-                const response = await fetch('http://localhost:3000/api/popup/voucher/business/676bedd3d9ed24328f94bf9b');
+                const response = await fetch('https://qr-backend-ruby.vercel.app/api/popup/voucher/business/676bedd3d9ed24328f94bf9b');
                 const data = await response.json();
                 
                 if (data.success) {
@@ -292,7 +292,7 @@
             
             setTimeout(() => {
                 // Redirect to the voucher form with businessId
-                window.location.href = `http://localhost:5173/voucher/form/${businessId}`;
+                window.location.href = `https://qr-lac-alpha.vercel.app/voucher/form/${businessId}`;
             }, 500);
         }
 
