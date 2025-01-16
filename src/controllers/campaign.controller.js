@@ -277,13 +277,13 @@ const trackCampaignClick = async (req, res) => {
     const token = Buffer.from(JSON.stringify(responseData)).toString('base64');
 
     // Redirect to claim page with token 🔄
-    const claimUrl = `http://localhost:5173/campaign/claim?token=${token}`;
+    const claimUrl = `https://qr-lac-alpha.vercel.app/campaign/claim?token=${token}`;
     res.redirect(claimUrl);
 
   } catch (error) {
     console.error('Track campaign click error:', error);
     // In case of error, redirect to error page
-    res.redirect(`http://localhost:5173/campaign/error?message=${encodeURIComponent('Failed to process campaign link! 😢')}`);
+    res.redirect(`https://qr-lac-alpha.vercel.app/campaign/error?message=${encodeURIComponent('Failed to process campaign link! 😢')}`);
   }
 };
 
@@ -548,7 +548,7 @@ const getAllCampaigns = async (req, res) => {
         platform: inf.platform,
         referralCode: inf.referralCode,
         // Format link as API endpoint
-        referralLink: `http://localhost:3000/api/campaigns/click/${inf.referralCode}`,
+        referralLink: `https://qr-backend-ruby.vercel.app/api/campaigns/click/${inf.referralCode}`,
         stats: {
           clicks: inf.stats?.clicks || 0,
           conversions: inf.stats?.conversions || 0,
