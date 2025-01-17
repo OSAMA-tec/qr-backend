@@ -59,18 +59,18 @@ const createCampaign = async (req, res) => {
     const voucherStart = new Date(voucher.startDate);
     const voucherEnd = new Date(voucher.endDate);
 
-    if (campaignStart < voucherStart || campaignEnd > voucherEnd) {
-      return res.status(400).json({
-        success: false,
-        message: 'Campaign dates must be within voucher validity period! ⚠️',
-        data: {
-          voucherValidity: {
-            start: voucherStart,
-            end: voucherEnd
-          }
-        }
-      });
-    }
+    // if (campaignStart < voucherStart || campaignEnd > voucherEnd) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: 'Campaign dates must be within voucher validity period! ⚠️',
+    //     data: {
+    //       voucherValidity: {
+    //         start: voucherStart,
+    //         end: voucherEnd
+    //       }
+    //     }
+    //   });
+    // }
 
     // Process form config
     if (campaignData.formConfig) {
