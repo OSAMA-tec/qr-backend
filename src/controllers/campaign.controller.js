@@ -43,7 +43,7 @@ const createCampaign = async (req, res) => {
     const voucher = await Coupon.findOne({
       _id: campaignData.voucherId,
       businessId,
-      isActive: true
+      // isActive: true
     });
 
     if (!voucher) {
