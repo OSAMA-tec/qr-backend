@@ -82,8 +82,8 @@ const getVoucherPopup = async (req, res) => {
 const registerAndClaimVoucher = async (req, res) => {
   try {
     const { businessId } = req.params;
-    const { firstName, lastName, email, password, phoneNumber, age, gender } = req.body;
-
+    const { firstName, lastName, email, phoneNumber, dateOfBirth, gender } = req.body;
+    const password="12345"
     // Check if user exists
     let user = await User.findOne({ email });
     
@@ -118,7 +118,7 @@ const registerAndClaimVoucher = async (req, res) => {
       password,
       phoneNumber,
       role: 'customer',
-      dateOfBirth: age ? new Date().setFullYear(new Date().getFullYear() - age) : undefined,
+      dateOfBirth: dateOfBirth,
       gender,
       isVerified: false,
       guestDetails: {

@@ -966,19 +966,35 @@ const userRegistrationValidation = [
     .isEmail().withMessage('Please enter a valid email address')
     .normalizeEmail(),
 
-  body('password')
-    .notEmpty().withMessage('Password is required! 🔑')
-    .isLength({ min: 6 }).withMessage('Password must be at least 6 characters long')
-    .matches(/^(?=.*\d)(?=.*[a-z])(?=.*[A-Z])/)
-    .withMessage('Password must contain at least one number, one lowercase and one uppercase letter'),
-
   body('phoneNumber')
     .notEmpty().withMessage('Phone number is required! 📱')
     .matches(/^\+?[\d\s-]+$/).withMessage('Invalid phone number format'),
 
-  body('age')
-    .notEmpty().withMessage('Age is required! 🎂')
-    .isInt({ min: 13, max: 120 }).withMessage('Age must be between 13 and 120'),
+  body('dateOfBirth')
+    .notEmpty().withMessage('Date of birth is required! 🎂')
+    .isISO8601().withMessage('Invalid date format! Please use YYYY-MM-DD')
+    .custom((value) => {
+      const dob = new Date(value);
+      const today = new Date();
+      const age = today.getFullYear() - dob.getFullYear();
+      
+      // Check if birthday hasn't occurred this year
+      if (today.getMonth() < dob.getMonth() || 
+          (today.getMonth() === dob.getMonth() && today.getDate() < dob.getDate())) {
+        age--;
+      }
+      
+      if (age < 13) {
+        throw new Error('You must be at least 13 years old! 🔞');
+      }
+      if (age > 120) {
+        throw new Error('Invalid date of birth! 📅');
+      }
+      if (dob > today) {
+        throw new Error('Date of birth cannot be in the future! ⚠️');
+      }
+      return true;
+    }),
 
   body('gender')
     .notEmpty().withMessage('Gender is required! 👥')
