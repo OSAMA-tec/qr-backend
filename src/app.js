@@ -67,7 +67,7 @@ app.use(cors({
     'Date',
     'X-Api-Version'
   ],
-  exposedHeaders: ['X-XSRF-TOKEN', 'X-CSRF-Token', 'CSRF-Token']
+  exposedHeaders: ['X-XSRF-TOKEN', 'X-CSRF-Token', 'CSRF-Token', 'Set-Cookie']
 }));
 
 // Security headers 🔒
@@ -76,7 +76,7 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false,
   contentSecurityPolicy: {
     directives: {
-      defaultSrc: ["'self'"],
+      defaultSrc: ["'self'", "https://qr-lac-alpha.vercel.app"],
       connectSrc: ["'self'", "https://qr-lac-alpha.vercel.app"],
       frameSrc: ["'self'", "https://qr-lac-alpha.vercel.app"],
       imgSrc: ["'self'", "data:", "https:"],

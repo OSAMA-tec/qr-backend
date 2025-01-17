@@ -7,8 +7,8 @@ const csrfProtection = csrf({
   cookie: {
     key: '_csrf',
     httpOnly: true,
-    secure: true, // Always use secure in production
-    sameSite: 'none', // Allow cross-site cookie
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
     maxAge: 7200 // 2 hours
   },
   value: (req) => {
@@ -47,11 +47,10 @@ const generateToken = (req, res) => {
 
   // Set CSRF token in cookie with proper settings
   res.cookie('XSRF-TOKEN', token, {
-    secure: true, // Always use secure
-    sameSite: 'none', // Allow cross-site cookie
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
     maxAge: 7200000, // 2 hours in milliseconds
-    path: '/',
-    domain: process.env.COOKIE_DOMAIN || undefined // Use if needed for subdomain support
+    path: '/'
   });
 
   res.json({
