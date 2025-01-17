@@ -233,7 +233,7 @@ const getClaimedVoucher = async (req, res) => {
       Coupon.findOne({
         _id: voucherId,
         isActive: true,
-        usedTrue: true
+        // usedTrue: true
       }).populate('businessId', 'businessProfile businessId')
     ]);
 

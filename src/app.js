@@ -50,15 +50,22 @@ app.use(cookieParser());
 
 // CORS configuration 🌐
 app.use(cors({
-  origin: ['http://localhost:5173','https://qr-lac-alpha.vercel.app','http://127.0.0.1:5500'],
+  origin: ['http://localhost:5173', 'https://qr-lac-alpha.vercel.app', 'http://127.0.0.1:5500'],
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
     'Content-Type',
     'Authorization',
     'X-XSRF-TOKEN',
     'X-CSRF-Token',
-    'CSRF-Token'
+    'CSRF-Token',
+    'X-Requested-With',
+    'Accept',
+    'Accept-Version',
+    'Content-Length',
+    'Content-MD5',
+    'Date',
+    'X-Api-Version'
   ],
   exposedHeaders: ['X-XSRF-TOKEN', 'X-CSRF-Token', 'CSRF-Token']
 }));
@@ -66,7 +73,20 @@ app.use(cors({
 // Security headers 🔒
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
-  crossOriginEmbedderPolicy: false
+  crossOriginEmbedderPolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      connectSrc: ["'self'", "https://qr-lac-alpha.vercel.app"],
+      frameSrc: ["'self'", "https://qr-lac-alpha.vercel.app"],
+      imgSrc: ["'self'", "data:", "https:"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https:"],
+      fontSrc: ["'self'", "https:", "data:"],
+      formAction: ["'self'", "https://qr-lac-alpha.vercel.app"],
+      upgradeInsecureRequests: []
+    }
+  }
 }));
 
 app.use(morgan('dev'));

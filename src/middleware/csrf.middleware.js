@@ -7,15 +7,19 @@ const csrfProtection = csrf({
   cookie: {
     key: '_csrf',
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
+    secure: true, // Always use secure in production
+    sameSite: 'none', // Allow cross-site cookie
     maxAge: 7200 // 2 hours
   },
   value: (req) => {
-    // Check for token in different header variations
-    return req.headers['x-xsrf-token'] || 
-           req.headers['x-csrf-token'] || 
-           req.headers['csrf-token'];
+    // Check for token in different places
+    return (
+      req.headers['x-xsrf-token'] || 
+      req.headers['x-csrf-token'] || 
+      req.headers['csrf-token'] ||
+      req.body._csrf ||
+      req.query._csrf
+    );
   }
 });
 
@@ -26,7 +30,8 @@ const handleCSRFError = (err, req, res, next) => {
   }
 
   console.error('CSRF Error:', err.message);
-  console.error('Headers received:', req.headers); // Log headers for debugging
+  console.error('Headers received:', req.headers);
+  console.error('Token received:', req.headers['x-xsrf-token'] || req.headers['x-csrf-token'] || req.headers['csrf-token']);
   
   // Return user-friendly error
   res.status(403).json({
@@ -40,11 +45,13 @@ const handleCSRFError = (err, req, res, next) => {
 const generateToken = (req, res) => {
   const token = req.csrfToken();
 
-  // Set CSRF token in cookie
+  // Set CSRF token in cookie with proper settings
   res.cookie('XSRF-TOKEN', token, {
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: process.env.NODE_ENV === 'production' ? 'strict' : 'lax',
-    maxAge: 7200000 // 2 hours in milliseconds
+    secure: true, // Always use secure
+    sameSite: 'none', // Allow cross-site cookie
+    maxAge: 7200000, // 2 hours in milliseconds
+    path: '/',
+    domain: process.env.COOKIE_DOMAIN || undefined // Use if needed for subdomain support
   });
 
   res.json({

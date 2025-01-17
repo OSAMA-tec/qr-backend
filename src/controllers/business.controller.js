@@ -293,9 +293,19 @@ const listCustomers = async (req, res) => {
         lastName: customer.lastName,
         email: customer.email,
         phoneNumber: customer.phoneNumber || null,
+        dateOfBirth: customer.dateOfBirth || null,
         isGuest: customer.isGuest || false,
         guestSource: customer.isGuest ? customer.guestDetails?.claimedFrom : null,
-        joinedDate: customer.createdAt
+        joinedDate: customer.createdAt,
+        picUrl: customer.picUrl || null,
+        gdprConsent: customer.gdprConsent || {
+          marketing: false,
+          analytics: false,
+          consentDate: null
+        },
+        lastLogin: customer.lastLogin || null,
+        isVerified: customer.isVerified || false,
+        isActive: customer.isActive || false
       },
       voucherActivity: {
         claims: (customer.voucherClaims || []).map(claim => {
@@ -310,17 +320,26 @@ const listCustomers = async (req, res) => {
             redeemedDate: claim.redeemedDate,
             expiryDate: claim.expiryDate,
             claimMethod: claim.claimMethod,
-            analytics: claim.analytics,
+            analytics: {
+              ...claim.analytics,
+              clickDate: claim.analytics?.clickDate || null,
+              viewDate: claim.analytics?.viewDate || null,
+              redeemDate: claim.analytics?.redeemDate || null
+            },
             voucherInfo: voucherDetail ? {
               title: voucherDetail.title,
               discountType: voucherDetail.discountType,
-              discountValue: voucherDetail.discountValue
+              discountValue: voucherDetail.discountValue,
+              code: voucherDetail.code,
+              minimumPurchase: voucherDetail.minimumPurchase || 0,
+              maximumDiscount: voucherDetail.maximumDiscount || null
             } : null
           };
         }),
         stats: {
           activeClaims: customer.metrics.activeClaims || 0,
-          redeemedClaims: customer.metrics.redeemedClaims || 0
+          redeemedClaims: customer.metrics.redeemedClaims || 0,
+          totalClaims: (customer.voucherClaims || []).length
         }
       },
       transactionHistory: {
@@ -329,13 +348,26 @@ const listCustomers = async (req, res) => {
         visitsCount: customer.metrics.visitsCount || 0,
         lastVisit: customer.metrics.lastVisit,
         firstVisit: customer.metrics.firstVisit,
+        averageSpent: customer.metrics.totalSpent && customer.metrics.visitsCount ? 
+          (customer.metrics.totalSpent / customer.metrics.visitsCount).toFixed(2) : 0,
         recentTransactions: (customer.recentTransactions || []).map(tx => ({
           id: tx._id,
           amount: tx.amount,
           discountAmount: tx.discountAmount,
           date: tx.createdAt,
-          voucherId: tx.voucherId
+          voucherId: tx.voucherId,
+          location: tx.location || null,
+          status: tx.status || 'completed'
         }))
+      },
+      engagement: {
+        lastActive: customer.lastLogin || customer.metrics.lastVisit || customer.createdAt,
+        totalVoucherViews: customer.voucherClaims?.reduce((sum, claim) => 
+          sum + (claim.analytics?.viewCount || 0), 0) || 0,
+        totalVoucherClicks: customer.voucherClaims?.reduce((sum, claim) => 
+          sum + (claim.analytics?.clickCount || 0), 0) || 0,
+        conversionRate: customer.metrics.visitsCount && customer.metrics.redeemedClaims ? 
+          ((customer.metrics.redeemedClaims / customer.metrics.visitsCount) * 100).toFixed(2) : "0.00"
       }
     }));
 

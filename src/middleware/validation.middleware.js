@@ -974,32 +974,42 @@ const userRegistrationValidation = [
     .notEmpty().withMessage('Date of birth is required! 🎂')
     .isISO8601().withMessage('Invalid date format! Please use YYYY-MM-DD')
     .custom((value) => {
-      const dob = new Date(value);
-      const today = new Date();
-      const age = today.getFullYear() - dob.getFullYear();
-      
-      // Check if birthday hasn't occurred this year
-      if (today.getMonth() < dob.getMonth() || 
-          (today.getMonth() === dob.getMonth() && today.getDate() < dob.getDate())) {
-        age--;
+      try {
+        const dob = new Date(value);
+        const today = new Date();
+        let age = today.getFullYear() - dob.getFullYear();
+        const monthDiff = today.getMonth() - dob.getMonth();
+        
+        // Adjust age if birthday hasn't occurred this year
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < dob.getDate())) {
+          age--;
+        }
+
+        // Validations
+        if (isNaN(dob.getTime())) {
+          throw new Error('Invalid date format! Please use YYYY-MM-DD 📅');
+        }
+        if (dob > today) {
+          throw new Error('Date of birth cannot be in the future! ⚠️');
+        }
+        if (age < 13) {
+          throw new Error('You must be at least 13 years old! 🔞');
+        }
+        if (age > 120) {
+          throw new Error('Invalid date of birth! Age cannot exceed 120 years 📅');
+        }
+
+        return true;
+      } catch (error) {
+        throw new Error(error.message || 'Invalid date of birth! 📅');
       }
-      
-      if (age < 13) {
-        throw new Error('You must be at least 13 years old! 🔞');
-      }
-      if (age > 120) {
-        throw new Error('Invalid date of birth! 📅');
-      }
-      if (dob > today) {
-        throw new Error('Date of birth cannot be in the future! ⚠️');
-      }
-      return true;
     }),
 
   body('gender')
     .notEmpty().withMessage('Gender is required! 👥')
     .isIn(['male', 'female', 'other', 'prefer_not_to_say'])
     .withMessage('Invalid gender selection'),
+
   handleValidationErrors
 ];
 
