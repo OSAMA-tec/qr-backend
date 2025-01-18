@@ -5,22 +5,29 @@ const cookieParser = require('cookie-parser');
 // Configure CSRF protection 🛡️
 const csrfProtection = csrf({
   cookie: {
-    key: '_csrf', // 🔑 Specific cookie name
-    httpOnly: true,
+    key: 'XSRF-TOKEN', // 🔑 Match frontend cookie name
+    httpOnly: false,   // Allow frontend access
     sameSite: 'lax',
     secure: process.env.NODE_ENV === 'production'
   },
   ignoreMethods: ['GET', 'HEAD', 'OPTIONS'], // 🚦 Skip for safe methods
   value: (req) => {
-    // 🔍 Check multiple header variations
-    return (
-      req.headers['csrf-token'] ||
-      req.headers['xsrf-token'] ||
+    // 🔍 Get token from headers (match frontend naming)
+    const token = 
+      req.headers['x-xsrf-token'] || // Primary header name
+      req.headers['xsrf-token'] ||   // Fallback variations
       req.headers['x-csrf-token'] ||
-      req.headers['x-xsrf-token'] ||
-      (req.body && req.body._csrf) ||  // Check body
-      (req.query && req.query._csrf)    // Check query params
-    );
+      req.headers['csrf-token'];
+    
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 Token debug:', {
+        receivedToken: token,
+        headers: req.headers,
+        cookies: req.cookies
+      });
+    }
+    
+    return token;
   }
 });
 
@@ -36,10 +43,10 @@ const handleCSRFError = (err, req, res, next) => {
       url: req.url,
       method: req.method,
       headers: {
-        'csrf-token': req.headers['csrf-token'],
+        'x-xsrf-token': req.headers['x-xsrf-token'],
         'xsrf-token': req.headers['xsrf-token'],
         'x-csrf-token': req.headers['x-csrf-token'],
-        'x-xsrf-token': req.headers['x-xsrf-token']
+        'csrf-token': req.headers['csrf-token']
       },
       cookies: req.cookies,
       error: err.message
@@ -50,10 +57,10 @@ const handleCSRFError = (err, req, res, next) => {
     success: false,
     message: 'Invalid CSRF token 🚫',
     details: process.env.NODE_ENV === 'development' ? {
-      received: req.headers['csrf-token'] || 
+      received: req.headers['x-xsrf-token'] || 
                req.headers['xsrf-token'] || 
                req.headers['x-csrf-token'] ||
-               req.headers['x-xsrf-token'] ||
+               req.headers['csrf-token'] ||
                'No token found',
       error: err.message,
       cookies: req.cookies
@@ -66,7 +73,7 @@ const generateToken = (req, res) => {
   try {
     const token = req.csrfToken();
     
-    // Set both cookie variations for maximum compatibility
+    // Set single cookie with frontend-accessible settings
     res.cookie('XSRF-TOKEN', token, {
       httpOnly: false,  // 👀 Allows JavaScript access
       sameSite: 'lax',
@@ -74,15 +81,15 @@ const generateToken = (req, res) => {
       path: '/'
     });
     
-    res.cookie('_csrf', token, {
-      httpOnly: true,  // 🔒 Server-only access
-      sameSite: 'lax',
-      secure: process.env.NODE_ENV === 'production',
-      path: '/'
-    });
+    // Also set header for immediate use
+    res.set('X-XSRF-TOKEN', token);
     
-    // Set header for immediate use
-    res.set('X-CSRF-Token', token);
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🎟️ Token generated:', {
+        token,
+        cookies: req.cookies
+      });
+    }
     
     res.json({
       success: true,
