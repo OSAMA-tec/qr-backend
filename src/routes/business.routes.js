@@ -8,7 +8,8 @@ const {
   listStaff,
   addStaffMember,
   removeStaffMember,
-  getAllBusinesses
+  getAllBusinesses,
+  updateCustomerDetails
 } = require('../controllers/business.controller');
 
 const {
@@ -48,6 +49,7 @@ router.put('/business-profile', businessProfileValidation, updateBusinessProfile
 // Customer management routes 👥
 router.get('/customers', listCustomers);
 router.get('/customers/:id', getCustomerDetails);
+router.patch('/customers/:id', updateCustomerDetails); // 🆕 New route for updating customer details
 
 // Staff management routes 👥
 router.get('/staff', listStaff);

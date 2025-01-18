@@ -882,6 +882,110 @@ const getAllBusinesses = async (req, res) => {
   }
 };
 
+// Update customer details 👤
+const updateCustomerDetails = async (req, res) => {
+  try {
+    const businessId = req.user.userId;
+    const customerId = req.params.id;
+    const updates = req.body;
+
+    // 🔒 Security: Fields that shouldn't be updated by business
+    const restrictedFields = [
+      'password',
+      'role',
+      'isVerified',
+      'verificationToken',
+      'resetPasswordToken',
+      'resetPasswordExpires',
+      'subscription',
+      'businessProfile',
+      'voucherClaims'
+    ];
+
+    // Remove restricted fields
+    restrictedFields.forEach(field => delete updates[field]);
+
+    // 🔍 Find customer and verify they belong to this business
+    const customer = await User.findOne({
+      _id: customerId,
+      $or: [
+        { 'voucherClaims.businessId': businessId },
+        { 'guestDetails.businessId': businessId }
+      ]
+    });
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Customer not found or not associated with your business 🔍'
+      });
+    }
+
+    // 📝 Validate updates
+    if (updates.email) {
+      // Check if email is already taken by another user
+      const existingUser = await User.findOne({ 
+        email: updates.email,
+        _id: { $ne: customerId }
+      });
+      
+      if (existingUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'Email already in use by another customer 📧'
+        });
+      }
+    }
+
+    // 🔄 Update customer details
+    const updatedCustomer = await User.findByIdAndUpdate(
+      customerId,
+      { $set: updates },
+      { 
+        new: true,
+        runValidators: true,
+        select: '-password -resetPasswordToken -resetPasswordExpires -verificationToken'
+      }
+    );
+
+    // 📝 Log the update in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Customer updated:', {
+        businessId,
+        customerId,
+        updates: JSON.stringify(updates)
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Customer details updated successfully! 🎉',
+      data: {
+        customer: {
+          id: updatedCustomer._id,
+          firstName: updatedCustomer.firstName,
+          lastName: updatedCustomer.lastName,
+          email: updatedCustomer.email,
+          phoneNumber: updatedCustomer.phoneNumber,
+          dateOfBirth: updatedCustomer.dateOfBirth,
+          isGuest: updatedCustomer.isGuest,
+          guestDetails: updatedCustomer.guestDetails,
+          gdprConsent: updatedCustomer.gdprConsent,
+          updatedAt: updatedCustomer.updatedAt
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Update customer details error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update customer details ❌',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   getBusinessProfile,
   updateBusinessProfile,
@@ -890,5 +994,6 @@ module.exports = {
   listStaff,
   addStaffMember,
   removeStaffMember,
-  getAllBusinesses
+  getAllBusinesses,
+  updateCustomerDetails
 }; 
