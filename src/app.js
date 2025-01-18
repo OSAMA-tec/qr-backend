@@ -48,49 +48,54 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// CORS configuration 🌐
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? 'https://qr-lac-alpha.vercel.app'
-    : ['http://localhost:5173', 'https://qr-lac-alpha.vercel.app', 'http://127.0.0.1:5500'],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+// CORS Configuration 🌐
+const corsOptions = {
+  origin: [
+    'http://localhost:5173',    // Vite dev server
+    'http://localhost:3000',    // Alternative local dev
+    'https://qr-lac-alpha.vercel.app'  // Production frontend
+  ],
+  credentials: true,  // 🔑 Allow credentials (cookies)
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: [
     'Content-Type',
     'Authorization',
-    'X-XSRF-TOKEN',
     'X-CSRF-Token',
-    'CSRF-Token',
     'X-Requested-With',
     'Accept',
     'Accept-Version',
     'Content-Length',
     'Content-MD5',
     'Date',
-    'X-Api-Version'
+    'X-Api-Version',
+    'X-XSRF-TOKEN'
   ],
-  exposedHeaders: ['X-CSRF-Token']
-}));
+  exposedHeaders: [
+    'X-CSRF-Token',
+    'X-XSRF-TOKEN'
+  ]
+};
 
-// Security headers 🔒
+// Apply middlewares 🔧
+app.use(cors(corsOptions));
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" },
-  crossOriginEmbedderPolicy: false,
   contentSecurityPolicy: {
     directives: {
-      defaultSrc: ["'self'", "https://qr-lac-alpha.vercel.app"],
-      connectSrc: ["'self'", "https://qr-lac-alpha.vercel.app"],
-      frameSrc: ["'self'", "https://qr-lac-alpha.vercel.app"],
-      imgSrc: ["'self'", "data:", "https:"],
+      defaultSrc: ["'self'", 'http://localhost:5173', 'https://qr-lac-alpha.vercel.app'],
+      connectSrc: ["'self'", 'http://localhost:5173', 'https://qr-lac-alpha.vercel.app'],
+      frameSrc: ["'self'", 'http://localhost:5173', 'https://qr-lac-alpha.vercel.app'],
+      imgSrc: ["'self'", 'data:', 'https:'],
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-      styleSrc: ["'self'", "'unsafe-inline'", "https:"],
-      fontSrc: ["'self'", "https:", "data:"],
-      formAction: ["'self'", "https://qr-lac-alpha.vercel.app"]
+      styleSrc: ["'self'", "'unsafe-inline'", 'https:'],
+      fontSrc: ["'self'", 'https:', 'data:'],
+      formAction: ["'self'", 'http://localhost:5173', 'https://qr-lac-alpha.vercel.app']
     }
-  }
+  },
+  crossOriginEmbedderPolicy: false,  // 🔓 Allow loading resources from different origins
+  crossOriginResourcePolicy: { policy: "cross-origin" }  // 🔄 Allow cross-origin resource sharing
 }));
 
-app.use(morgan('dev'));
+app.use(morgan('dev')); // 📝 Logging
 
 // Enable pre-flight requests for all routes
 app.options('*', cors());
