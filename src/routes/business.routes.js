@@ -43,7 +43,7 @@ router.get(
 
 // Business profile routes 🏢
 router.get('/business-profile', getBusinessProfile);
-router.put('/business-profile', csrfProtection, businessProfileValidation, updateBusinessProfile);
+router.put('/business-profile', businessProfileValidation, updateBusinessProfile); //tt
 
 // Customer management routes 👥
 router.get('/customers', listCustomers);
@@ -51,7 +51,7 @@ router.get('/customers/:id', getCustomerDetails);
 
 // Staff management routes 👥
 router.get('/staff', listStaff);
-router.post('/staff', csrfProtection, staffMemberValidation, addStaffMember);
-router.delete('/staff/:id', csrfProtection, removeStaffMember);
+router.post('/staff', staffMemberValidation, addStaffMember); //tt
+router.delete('/staff/:id', removeStaffMember); //tt
 
 module.exports = router; 

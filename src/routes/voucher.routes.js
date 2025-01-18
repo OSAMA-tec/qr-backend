@@ -39,22 +39,22 @@ router.use(authMiddleware);
 router.use(isBusinessMiddleware);
 
 // Voucher management routes
-router.post('/', csrfProtection, voucherCreationValidation, createVoucher);
+router.post('/', voucherCreationValidation, createVoucher); //tt
 router.get('/', listVouchers);
 
 // Get claimed voucher users 👥
 router.get('/claimed-users', getClaimedVoucherUsers);
 
 // Voucher validation and redemption
-router.post('/validate', csrfProtection, voucherValidationRules, validateVoucher);
-router.post('/redeem', csrfProtection, voucherRedemptionValidation, redeemVoucher);
+router.post('/validate', voucherValidationRules, validateVoucher); //tt
+router.post('/redeem', voucherRedemptionValidation, redeemVoucher); //tt
 // QR code scanning endpoint
-router.post('/scan', csrfProtection, voucherValidationRules, scanVoucher);
+router.post('/scan', voucherValidationRules, scanVoucher); //tt
 // ID specific routes
-router.get('/:id', getVoucherDetails);
-router.put('/:id', csrfProtection, voucherUpdateValidation, updateVoucher);
-router.delete('/:id', csrfProtection, deleteVoucher);
-router.post('/:id/activate', csrfProtection, toggleVoucherStatus);
-router.post('/:id/deactivate', csrfProtection, toggleVoucherStatus);
+router.get('/:id', getVoucherDetails); //tt
+router.put('/:id', voucherUpdateValidation, updateVoucher); //tt
+router.delete('/:id', deleteVoucher); //tt
+router.post('/:id/activate', toggleVoucherStatus); //tt
+router.post('/:id/deactivate', toggleVoucherStatus); //tt
 
 module.exports = router; 

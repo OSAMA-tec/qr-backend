@@ -46,17 +46,17 @@ router.get('/admin/unread', getUnreadCount);  // Get unread count
 router.post('/admin/conversations/:id/read', markConversationAsRead);  // Mark as read
 router.get('/admin/conversations/:id/messages', getConversationMessages);  // Get messages
 router.delete('/admin/messages/:id', deleteMessage);  // Delete message
-router.post('/admin/upload', csrfProtection, uploadAttachment);  // Upload file
+router.post('/admin/upload', uploadAttachment);  // Upload file    //tt
 
 // Business Routes 💼
 router.use('/business', authMiddleware, isBusiness);
 router.get('/business/conversations', getConversations);  // Get own conversations
 router.get('/business/conversations/:id', getConversationById);  // Get single conversation
-router.post('/business/conversations', csrfProtection, createConversation);  // Create new conversation
+router.post('/business/conversations', createConversation);  // Create new conversation   //tt
 router.get('/business/unread', getUnreadCount);  // Get unread count
 router.post('/business/conversations/:id/read', markConversationAsRead);  // Mark as read
 router.get('/business/conversations/:id/messages', getConversationMessages);  // Get messages
 router.delete('/business/messages/:id', deleteMessage);  // Delete own message
-router.post('/business/upload', csrfProtection, uploadAttachment);  // Upload file
+router.post('/business/upload', uploadAttachment);  // Upload file  //tt
 
 module.exports = router; 

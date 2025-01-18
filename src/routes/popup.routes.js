@@ -32,7 +32,7 @@ const isBusinessMiddleware = (req, res, next) => {
 // Protected business routes 🔒
 router.use(authMiddleware);
 router.use(isBusinessMiddleware);
-router.put('/voucher/:voucherId/toggle-usage',csrfProtection, toggleVoucherUsage); // Toggle voucher usage status
+router.put('/voucher/:voucherId/toggle-usage', toggleVoucherUsage); // Toggle voucher usage status   //tt
 
 module.exports = router; 
 

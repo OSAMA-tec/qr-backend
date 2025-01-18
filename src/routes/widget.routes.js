@@ -170,29 +170,27 @@ const handleMultipartData = (req, res, next) => {
 router.post('/admin/templates/thumbnail', 
   authMiddleware,
   isAdmin,
-  csrfProtection,
   upload.single('thumbnail'),
   handleMultipartData,
   uploadWidgetThumbnail
-);
+); //tt
 
 router.post('/admin/templates/:templateId/thumbnail', 
   authMiddleware,
   isAdmin,
-  csrfProtection,
   upload.single('thumbnail'),
   handleMultipartData,
   uploadWidgetThumbnail
-);
+); //tt
 
 // Public routes 🌐
 router.get('/:businessId/config', getWidgetConfig);
-router.post('/claim-voucher', csrfProtection, claimVoucher);
+router.post('/claim-voucher', claimVoucher); //tt
 
 // Business routes 💼
 router.use('/business', authMiddleware, isBusiness);
 router.get('/business/customize', getCustomizationOptions);
-router.put('/business/customize', csrfProtection, validateWidgetTemplate, updateWidgetAppearance);
+router.put('/business/customize', validateWidgetTemplate, updateWidgetAppearance); //tt
 router.get('/business/embed-code', getEmbedCode);
 router.get('/business/widget', getBusinessOwnWidget);
 
@@ -207,26 +205,24 @@ router.get('/admin/businesses/:businessId', getBusinessWidgetDetails);
 
 // Template management routes for admin 🎨
 router.post('/admin/templates', 
-  csrfProtection,
   authMiddleware,
   isAdmin,
   upload.single('thumbnail'),
   handleMultipartData,
   validateWidgetTemplate,
   createTemplate
-);
+); //tt
 
 router.get('/admin/templates', getAllTemplates);
 router.get('/admin/templates/:id', getTemplateById);
 
 router.put('/admin/templates/:id', 
-  csrfProtection,
   authMiddleware,
   isAdmin,
   validateWidgetTemplate,
   updateTemplate
-);
+); //tt
 
-router.delete('/admin/templates/:id', csrfProtection, deleteTemplate);
+router.delete('/admin/templates/:id', deleteTemplate); //tt
 
 module.exports = router; 

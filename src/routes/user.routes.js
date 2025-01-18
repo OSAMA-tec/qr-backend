@@ -29,9 +29,9 @@ router.get('/customers/:id', authMiddleware, getCustomerDetails);
 
 // Protected routes 🔒
 router.get('/profile', authMiddleware, getProfile);
-router.put('/profile', authMiddleware, csrfProtection, profileUpdateValidation, updateProfile);
+router.put('/profile', authMiddleware, profileUpdateValidation, updateProfile); //tt
 router.get('/wallet', authMiddleware, getWalletPasses);
-router.post('/profile/picture', authMiddleware, csrfProtection, uploadProfilePic);
-router.delete('/profile/picture', authMiddleware, csrfProtection, deleteProfilePic);
+router.post('/profile/picture', authMiddleware, uploadProfilePic); //tt
+router.delete('/profile/picture', authMiddleware, deleteProfilePic); //tt
 
 module.exports = router;

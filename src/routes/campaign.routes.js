@@ -31,10 +31,9 @@ const isBusinessMiddleware = (req, res, next) => {
 router.get("/click/:referralCode", trackCampaignClick); // Track campaign click
 router.post(
   "/submit",
-  csrfProtection,
   campaignFormValidation,
   submitCampaignForm
-); // Submit campaign form
+); // Submit campaign form    //tt
 
 // Protected business routes 🔒
 router.use(authMiddleware);

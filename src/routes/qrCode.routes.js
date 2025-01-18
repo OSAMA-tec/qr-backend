@@ -33,8 +33,8 @@ router.use(authMiddleware);
 router.use(isBusinessMiddleware);
 
 // QR code generation routes
-router.post('/generate', csrfProtection, qrCodeGenerationValidation, generateQRCode);
-router.post('/bulk-generate', csrfProtection, bulkQRCodeGenerationValidation, bulkGenerateQRCodes);
+router.post('/generate', qrCodeGenerationValidation, generateQRCode); //tt
+router.post('/bulk-generate', bulkQRCodeGenerationValidation, bulkGenerateQRCodes); //tt
 
 // QR code details route
 router.get('/:id', getQRCodeDetails);
@@ -43,6 +43,6 @@ router.get('/:id', getQRCodeDetails);
 router.get('/validate/:code', validateQRCode);
 
 // QR code scan processing route
-router.post('/scan', csrfProtection, qrCodeScanValidation, processQRCodeScan);
+router.post('/scan', qrCodeScanValidation, processQRCodeScan); //tt
 
 module.exports = router; 
