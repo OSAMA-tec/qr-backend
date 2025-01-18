@@ -284,6 +284,7 @@ const listCustomers = async (req, res) => {
           lastName: 1,
           email: 1,
           phoneNumber: 1,
+          dateOfBirth: 1,
           isGuest: 1,
           guestDetails: 1,
           createdAt: 1,
@@ -293,82 +294,79 @@ const listCustomers = async (req, res) => {
               input: "$voucherClaims",
               as: "claim",
               cond: {
-                $eq: ["$$claim.businessId", businessObjectId],
-              },
-            },
+                $eq: ["$$claim.businessId", businessObjectId]
+              }
+            }
           },
           // Calculate customer metrics 📊
           metrics: {
             totalSpent: {
               $sum: {
-                $ifNull: ["$transactions.amount", 0],
-              },
+                $ifNull: ["$transactions.amount", 0]
+              }
             },
             totalDiscounts: {
               $sum: {
-                $ifNull: ["$transactions.discountAmount", 0],
-              },
+                $ifNull: ["$transactions.discountAmount", 0]
+              }
             },
             visitsCount: {
               $size: {
-                $ifNull: ["$transactions", []],
-              },
+                $ifNull: ["$transactions", []]
+              }
             },
             lastVisit: {
               $max: {
-                $ifNull: ["$transactions.createdAt", null],
-              },
+                $ifNull: ["$transactions.createdAt", null]
+              }
             },
             firstVisit: {
               $min: {
-                $ifNull: ["$transactions.createdAt", null],
-              },
+                $ifNull: ["$transactions.createdAt", null]
+              }
             },
             activeClaims: {
               $size: {
                 $filter: {
                   input: {
-                    $ifNull: ["$voucherClaims", []],
+                    $ifNull: ["$voucherClaims", []]
                   },
                   as: "claim",
                   cond: {
                     $and: [
                       { $eq: ["$$claim.businessId", businessObjectId] },
-                      { $eq: ["$$claim.status", "claimed"] },
-                    ],
-                  },
-                },
-              },
+                      { $eq: ["$$claim.status", "claimed"] }
+                    ]
+                  }
+                }
+              }
             },
             redeemedClaims: {
               $size: {
                 $filter: {
                   input: {
-                    $ifNull: ["$voucherClaims", []],
+                    $ifNull: ["$voucherClaims", []]
                   },
                   as: "claim",
                   cond: {
                     $and: [
                       { $eq: ["$$claim.businessId", businessObjectId] },
-                      { $eq: ["$$claim.status", "redeemed"] },
-                    ],
-                  },
-                },
-              },
+                      { $eq: ["$$claim.status", "redeemed"] }
+                    ]
+                  }
+                }
+              }
             },
           },
           // Get latest transactions 💰
           recentTransactions: {
-            $slice: [
-              {
-                $ifNull: ["$transactions", []],
-              },
-              5,
-            ],
+            $slice: [{
+              $ifNull: ["$transactions", []]
+            }, 5]
           },
           // Include voucher details 🎫
-          voucherDetails: 1,
-        },
+          voucherDetails: 1
+        }
       },
       {
         $sort: {
@@ -397,19 +395,17 @@ const listCustomers = async (req, res) => {
         phoneNumber: customer.phoneNumber || null,
         dateOfBirth: customer.dateOfBirth || null,
         isGuest: customer.isGuest || false,
-        guestSource: customer.isGuest
-          ? customer.guestDetails?.claimedFrom
-          : null,
+        guestSource: customer.isGuest ? customer.guestDetails?.claimedFrom : null,
         joinedDate: customer.createdAt,
         picUrl: customer.picUrl || null,
         gdprConsent: customer.gdprConsent || {
           marketing: false,
           analytics: false,
-          consentDate: null,
+          consentDate: null
         },
         lastLogin: customer.lastLogin || null,
         isVerified: customer.isVerified || false,
-        isActive: customer.isActive || false,
+        isActive: customer.isActive || false
       },
       voucherActivity: {
         claims: (customer.voucherClaims || []).map((claim) => {
