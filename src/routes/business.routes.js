@@ -56,4 +56,4 @@ router.get('/staff', listStaff);
 router.post('/staff', staffMemberValidation, addStaffMember); //tt
 router.delete('/staff/:id', removeStaffMember); //tt
 
-module.exports = router; 
+module.exports = router;       
