@@ -38,7 +38,7 @@ const handleCSRFError = (err, req, res, next) => {
   res.status(403).json({
     success: false,
     message: 'Invalid CSRF token 🚫',
-    details: process.env.NODE_ENV === 'development' ? {
+    details: process.env.NODE_ENV === 'production' ? {
       received: req.headers['csrf-token'] || req.headers['xsrf-token'] || 'No token found',
       error: err.message
     } : undefined
