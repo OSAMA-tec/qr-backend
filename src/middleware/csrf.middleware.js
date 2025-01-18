@@ -7,12 +7,11 @@ const csrfProtection = csrf({
   cookie: {
     key: '_csrf',
     httpOnly: true,
-    secure: true,  // Always use secure cookies
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',  // Use 'none' in production for cross-origin
-    path: '/',
+    secure: true,
+    sameSite: 'strict',  // Changed to 'strict' for better compatibility
     maxAge: 7200 // 2 hours
   },
-  ignoreMethods: ['GET', 'HEAD', 'OPTIONS'],  // Don't check these methods
+  ignoreMethods: ['GET', 'HEAD', 'OPTIONS'],
   value: (req) => {
     // Check multiple header variations for the token
     const token = 
@@ -57,16 +56,19 @@ const handleCSRFError = (err, req, res, next) => {
 const generateToken = (req, res) => {
   const token = req.csrfToken();
 
-  // Set CSRF token in cookie
+  // Set CSRF token in cookie with compatible settings
   res.cookie('XSRF-TOKEN', token, {
-    secure: true,  // Always use secure cookies
-    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',  // Use 'none' in production
+    secure: true,
+    sameSite: 'strict',
     path: '/',
     maxAge: 7200000 // 2 hours in milliseconds
   });
 
-  // Also set it in response header
-  res.set('X-CSRF-Token', token);
+  // Also set it in response headers
+  res.set({
+    'X-CSRF-Token': token,
+    'Access-Control-Expose-Headers': 'X-CSRF-Token'
+  });
 
   res.json({
     success: true,

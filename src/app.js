@@ -69,7 +69,7 @@ app.use(cors({
     'Date',
     'X-Api-Version'
   ],
-  exposedHeaders: ['X-XSRF-TOKEN', 'X-CSRF-Token', 'CSRF-Token', 'Set-Cookie']
+  exposedHeaders: ['X-CSRF-Token']
 }));
 
 // Security headers 🔒
@@ -85,15 +85,14 @@ app.use(helmet({
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https:"],
       fontSrc: ["'self'", "https:", "data:"],
-      formAction: ["'self'", "https://qr-lac-alpha.vercel.app"],
-      upgradeInsecureRequests: []
+      formAction: ["'self'", "https://qr-lac-alpha.vercel.app"]
     }
   }
 }));
 
 app.use(morgan('dev'));
 
-// Add pre-flight OPTIONS handler
+// Enable pre-flight requests for all routes
 app.options('*', cors());
 
 // Routes 🛣️
