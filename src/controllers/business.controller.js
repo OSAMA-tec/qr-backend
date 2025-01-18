@@ -85,11 +85,20 @@ const updateBusinessProfile = async (req, res) => {
   }
 };
 
-// List customers 👥
+// List customers with filters 👥
 const listCustomers = async (req, res) => {
   try {
     const businessId = req.user.userId;
-    const { page = 1, limit = 10, search, status } = req.query;
+    const { 
+      page = 1, 
+      limit = 10, 
+      search, 
+      status,
+      // 🎂 Birthday filter params
+      birthdayMonth, // Month number (1-12)
+      birthdayDay,   // Day of month (1-31)
+      birthdayRange  // Number of days to look ahead
+    } = req.query;
 
     // Convert businessId to ObjectId 🔄
     const businessObjectId = new mongoose.Types.ObjectId(businessId);
@@ -106,8 +115,8 @@ const listCustomers = async (req, res) => {
     if (search) {
       baseQuery.$and = [{
         $or: [
-        { firstName: new RegExp(search, 'i') },
-        { lastName: new RegExp(search, 'i') },
+          { firstName: new RegExp(search, 'i') },
+          { lastName: new RegExp(search, 'i') },
           { email: new RegExp(search, 'i') },
           { phoneNumber: new RegExp(search, 'i') }
         ]
@@ -129,6 +138,89 @@ const listCustomers = async (req, res) => {
         case 'guest':
           baseQuery.isGuest = true;
           break;
+      }
+    }
+
+    // Add birthday filter if provided 🎂
+    if (birthdayMonth || birthdayDay || birthdayRange) {
+      const today = new Date();
+      const currentMonth = today.getMonth() + 1; // MongoDB months are 1-12
+      const currentDay = today.getDate();
+
+      if (birthdayRange) {
+        // Calculate date range for upcoming birthdays
+        const startDate = new Date();
+        const endDate = new Date();
+        endDate.setDate(endDate.getDate() + parseInt(birthdayRange));
+
+        // Handle year wrap around
+        const startMonth = startDate.getMonth() + 1;
+        const startDay = startDate.getDate();
+        const endMonth = endDate.getMonth() + 1;
+        const endDay = endDate.getDate();
+
+        if (endMonth < startMonth || (endMonth === startMonth && endDay < startDay)) {
+          // Range crosses year boundary
+          baseQuery.$or = baseQuery.$or || [];
+          baseQuery.$or.push(
+            {
+              $expr: {
+                $or: [
+                  {
+                    $and: [
+                      { $eq: [{ $month: '$dateOfBirth' }, startMonth] },
+                      { $gte: [{ $dayOfMonth: '$dateOfBirth' }, startDay] }
+                    ]
+                  },
+                  {
+                    $and: [
+                      { $eq: [{ $month: '$dateOfBirth' }, endMonth] },
+                      { $lte: [{ $dayOfMonth: '$dateOfBirth' }, endDay] }
+                    ]
+                  },
+                  {
+                    $and: [
+                      { $gt: [{ $month: '$dateOfBirth' }, startMonth] },
+                      { $lt: [{ $month: '$dateOfBirth' }, endMonth] }
+                    ]
+                  }
+                ]
+              }
+            }
+          );
+        } else {
+          // Range within same year
+          baseQuery.$expr = {
+            $or: [
+              {
+                $and: [
+                  { $eq: [{ $month: '$dateOfBirth' }, startMonth] },
+                  { $gte: [{ $dayOfMonth: '$dateOfBirth' }, startDay] },
+                  { $lte: [{ $dayOfMonth: '$dateOfBirth' }, endDay] }
+                ]
+              },
+              {
+                $and: [
+                  { $gt: [{ $month: '$dateOfBirth' }, startMonth] },
+                  { $lt: [{ $month: '$dateOfBirth' }, endMonth] }
+                ]
+              }
+            ]
+          };
+        }
+      } else if (birthdayMonth && birthdayDay) {
+        // Exact birthday match
+        baseQuery.$expr = {
+          $and: [
+            { $eq: [{ $month: '$dateOfBirth' }, parseInt(birthdayMonth)] },
+            { $eq: [{ $dayOfMonth: '$dateOfBirth' }, parseInt(birthdayDay)] }
+          ]
+        };
+      } else if (birthdayMonth) {
+        // Match specific month
+        baseQuery.$expr = {
+          $eq: [{ $month: '$dateOfBirth' }, parseInt(birthdayMonth)]
+        };
       }
     }
 

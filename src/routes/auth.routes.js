@@ -37,7 +37,7 @@ const isAdminMiddleware = (req, res, next) => {
 };
 
 // CSRF token route 🔑️
-router.get('/csrf-token', csrfProtection, generateToken);
+router.get('/csrf-token', generateToken); //tt
 
 // Public routes 🌐
 router.post('/register', registerValidation, register);
@@ -52,16 +52,15 @@ router.get('/verify-email/:token', verifyEmail);  // For email link clicks
 router.post('/verify-email/:token', verifyEmail); // For API calls
 
 // Protected routes 🔒
-router.post('/logout', csrfProtection, authMiddleware, logout);
+router.post('/logout', authMiddleware, logout); //tt
 
 // Admin-only routes 👑
 router.post(
   '/register-business',
   authMiddleware,
   isAdminMiddleware,
-  csrfProtection,
   businessRegistrationValidation,
   registerBusiness
-);
+); //tt
 
 module.exports = router; 
