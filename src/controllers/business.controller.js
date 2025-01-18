@@ -106,8 +106,8 @@ const listCustomers = async (req, res) => {
     if (search) {
       baseQuery.$and = [{
         $or: [
-          { firstName: new RegExp(search, 'i') },
-          { lastName: new RegExp(search, 'i') },
+        { firstName: new RegExp(search, 'i') },
+        { lastName: new RegExp(search, 'i') },
           { email: new RegExp(search, 'i') },
           { phoneNumber: new RegExp(search, 'i') }
         ]

@@ -50,7 +50,9 @@ app.use(cookieParser());
 
 // CORS configuration 🌐
 app.use(cors({
-  origin: ['http://localhost:5173', 'https://qr-lac-alpha.vercel.app', 'http://127.0.0.1:5500'],
+  origin: process.env.NODE_ENV === 'production' 
+    ? 'https://qr-lac-alpha.vercel.app'
+    : ['http://localhost:5173', 'https://qr-lac-alpha.vercel.app', 'http://127.0.0.1:5500'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: [
@@ -90,6 +92,9 @@ app.use(helmet({
 }));
 
 app.use(morgan('dev'));
+
+// Add pre-flight OPTIONS handler
+app.options('*', cors());
 
 // Routes 🛣️
 app.use('/api/auth', authRoutes);
