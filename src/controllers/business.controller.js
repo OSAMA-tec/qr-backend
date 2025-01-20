@@ -98,10 +98,9 @@ const listCustomers = async (req, res) => {
       limit = 10,
       search,
       status,
-      // 🎂 Birthday filter params
-      birthdayMonth, // Month number (1-12)
-      birthdayDay, // Day of month (1-31)
-      birthdayRange, // Number of days to look ahead
+      birthdayMonth,
+      birthdayDay,
+      birthdayRange,
     } = req.query;
 
     // Convert businessId to ObjectId 🔄
@@ -110,8 +109,8 @@ const listCustomers = async (req, res) => {
     // Build base query for both regular and guest users 🔍
     const baseQuery = {
       $or: [
-        { "voucherClaims.businessId": businessObjectId }, // Regular users with voucher claims
-        { "guestDetails.businessId": businessObjectId }, // Guest users
+        { "voucherClaims.businessId": businessObjectId },
+        { "guestDetails.businessId": businessObjectId },
       ],
     };
 
@@ -150,7 +149,7 @@ const listCustomers = async (req, res) => {
     // Add birthday filter if provided 🎂
     if (birthdayMonth || birthdayDay || birthdayRange) {
       const today = new Date();
-      const currentMonth = today.getMonth() + 1; // MongoDB months are 1-12
+      const currentMonth = today.getMonth() + 1;
       const currentDay = today.getDate();
 
       if (birthdayRange) {
@@ -165,11 +164,7 @@ const listCustomers = async (req, res) => {
         const endMonth = endDate.getMonth() + 1;
         const endDay = endDate.getDate();
 
-        if (
-          endMonth < startMonth ||
-          (endMonth === startMonth && endDay < startDay)
-        ) {
-          // Range crosses year boundary
+        if (endMonth < startMonth || (endMonth === startMonth && endDay < startDay)) {
           baseQuery.$or = baseQuery.$or || [];
           baseQuery.$or.push({
             $expr: {
@@ -196,7 +191,6 @@ const listCustomers = async (req, res) => {
             },
           });
         } else {
-          // Range within same year
           baseQuery.$expr = {
             $or: [
               {
@@ -216,7 +210,6 @@ const listCustomers = async (req, res) => {
           };
         }
       } else if (birthdayMonth && birthdayDay) {
-        // Exact birthday match
         baseQuery.$expr = {
           $and: [
             { $eq: [{ $month: "$dateOfBirth" }, parseInt(birthdayMonth)] },
@@ -224,7 +217,6 @@ const listCustomers = async (req, res) => {
           ],
         };
       } else if (birthdayMonth) {
-        // Match specific month
         baseQuery.$expr = {
           $eq: [{ $month: "$dateOfBirth" }, parseInt(birthdayMonth)],
         };
@@ -255,6 +247,15 @@ const listCustomers = async (req, res) => {
           foreignField: "_id",
           as: "voucherDetails",
         },
+      },
+      // Lookup campaign details 🎯
+      {
+        $lookup: {
+          from: "campaigns",
+          localField: "guestDetails.source.campaignId",
+          foreignField: "_id",
+          as: "campaignDetails"
+        }
       },
       // Lookup transaction details 💳
       {
@@ -301,36 +302,24 @@ const listCustomers = async (req, res) => {
           // Calculate customer metrics 📊
           metrics: {
             totalSpent: {
-              $sum: {
-                $ifNull: ["$transactions.amount", 0]
-              }
+              $sum: "$transactions.amount"
             },
             totalDiscounts: {
-              $sum: {
-                $ifNull: ["$transactions.discountAmount", 0]
-              }
+              $sum: "$transactions.discountAmount"
             },
             visitsCount: {
-              $size: {
-                $ifNull: ["$transactions", []]
-              }
+              $size: "$transactions"
             },
             lastVisit: {
-              $max: {
-                $ifNull: ["$transactions.createdAt", null]
-              }
+              $max: "$transactions.createdAt"
             },
             firstVisit: {
-              $min: {
-                $ifNull: ["$transactions.createdAt", null]
-              }
+              $min: "$transactions.createdAt"
             },
             activeClaims: {
               $size: {
                 $filter: {
-                  input: {
-                    $ifNull: ["$voucherClaims", []]
-                  },
+                  input: "$voucherClaims",
                   as: "claim",
                   cond: {
                     $and: [
@@ -344,9 +333,7 @@ const listCustomers = async (req, res) => {
             redeemedClaims: {
               $size: {
                 $filter: {
-                  input: {
-                    $ifNull: ["$voucherClaims", []]
-                  },
+                  input: "$voucherClaims",
                   as: "claim",
                   cond: {
                     $and: [
@@ -360,18 +347,18 @@ const listCustomers = async (req, res) => {
           },
           // Get latest transactions 💰
           recentTransactions: {
-            $slice: [{
-              $ifNull: ["$transactions", []]
-            }, 5]
+            $slice: ["$transactions", 5]
           },
           // Include voucher details 🎫
-          voucherDetails: 1
+          voucherDetails: 1,
+          // Include campaign details 🎯
+          campaignDetails: { $arrayElemAt: ["$campaignDetails", 0] }
         }
       },
       {
         $sort: {
           "metrics.lastVisit": -1,
-          createdAt: -1, // Secondary sort for users without visits
+          createdAt: -1,
         },
       },
       {
@@ -384,7 +371,7 @@ const listCustomers = async (req, res) => {
 
     // Get total count for pagination 📄
     const total = await User.countDocuments(baseQuery);
-    console.log(customers[0]);
+
     // Process customers to add additional info 🔄
     const processedCustomers = customers.map((customer) => ({
       id: customer._id,
@@ -395,7 +382,6 @@ const listCustomers = async (req, res) => {
         phoneNumber: customer.phoneNumber || null,
         dateOfBirth: customer.dateOfBirth || null,
         isGuest: customer.isGuest || false,
-        guestSource: customer.isGuest ? customer.guestDetails?.claimedFrom : null,
         joinedDate: customer.createdAt,
         picUrl: customer.picUrl || null,
         gdprConsent: customer.gdprConsent || {
@@ -406,6 +392,24 @@ const listCustomers = async (req, res) => {
         lastLogin: customer.lastLogin || null,
         isVerified: customer.isVerified || false,
         isActive: customer.isActive || false
+      },
+      // Add source tracking info 🎯
+      sourceInfo: {
+        type: customer.guestDetails?.claimedFrom || 'direct',
+        details: customer.guestDetails?.source ? {
+          type: customer.guestDetails.source.type,
+          campaignName: customer.guestDetails.source.campaignName,
+          influencerName: customer.guestDetails.source.influencerName,
+          influencerPlatform: customer.guestDetails.source.influencerPlatform,
+          referralCode: customer.guestDetails.source.referralCode,
+          joinedAt: customer.guestDetails.source.joinedAt,
+          campaign: customer.campaignDetails ? {
+            id: customer.campaignDetails._id,
+            name: customer.campaignDetails.name,
+            type: customer.campaignDetails.type,
+            status: customer.campaignDetails.status
+          } : null
+        } : null
       },
       voucherActivity: {
         claims: (customer.voucherClaims || []).map((claim) => {
@@ -425,6 +429,7 @@ const listCustomers = async (req, res) => {
               clickDate: claim.analytics?.clickDate || null,
               viewDate: claim.analytics?.viewDate || null,
               redeemDate: claim.analytics?.redeemDate || null,
+              source: claim.analytics?.source || null
             },
             voucherInfo: voucherDetail
               ? {
@@ -452,9 +457,7 @@ const listCustomers = async (req, res) => {
         firstVisit: customer.metrics.firstVisit,
         averageSpent:
           customer.metrics.totalSpent && customer.metrics.visitsCount
-            ? (
-                customer.metrics.totalSpent / customer.metrics.visitsCount
-              ).toFixed(2)
+            ? (customer.metrics.totalSpent / customer.metrics.visitsCount).toFixed(2)
             : 0,
         recentTransactions: (customer.recentTransactions || []).map((tx) => ({
           id: tx._id,
@@ -483,11 +486,7 @@ const listCustomers = async (req, res) => {
           ) || 0,
         conversionRate:
           customer.metrics.visitsCount && customer.metrics.redeemedClaims
-            ? (
-                (customer.metrics.redeemedClaims /
-                  customer.metrics.visitsCount) *
-                100
-              ).toFixed(2)
+            ? ((customer.metrics.redeemedClaims / customer.metrics.visitsCount) * 100).toFixed(2)
             : "0.00",
       },
     }));
@@ -508,6 +507,14 @@ const listCustomers = async (req, res) => {
         (sum, c) => sum + (c.transactionHistory.totalDiscounts || 0),
         0
       ),
+      // Add source breakdown 📊
+      sourceBreakdown: {
+        campaign: processedCustomers.filter(c => c.sourceInfo.type === 'campaign').length,
+        popup: processedCustomers.filter(c => c.sourceInfo.type === 'popup').length,
+        qr: processedCustomers.filter(c => c.sourceInfo.type === 'qr').length,
+        widget: processedCustomers.filter(c => c.sourceInfo.type === 'widget').length,
+        direct: processedCustomers.filter(c => c.sourceInfo.type === 'direct').length
+      }
     };
 
     res.json({
