@@ -7,6 +7,7 @@ const { detectDevice, parseUserAgent } = require('../utils/device.utils');
 const { getLocationFromIP } = require('../utils/location.utils');
 const Coupon = require('../models/coupon.model');
 const mongoose = require('mongoose');
+const QRCode = require('qrcode');
 
 // Helper: Generate unique referral code 🎫
 const generateReferralCode = (campaignId, influencerName) => {
@@ -277,13 +278,13 @@ const trackCampaignClick = async (req, res) => {
     const token = Buffer.from(JSON.stringify(responseData)).toString('base64');
 
     // Redirect to claim page with token 🔄
-    const claimUrl = `https://qr-lac-alpha.vercel.app/campaign/claim?token=${token}`;
+    const claimUrl = `${process.env.CLIENT_URL}/campaign/claim?token=${token}`;
     res.redirect(claimUrl);
 
   } catch (error) {
     console.error('Track campaign click error:', error);
     // In case of error, redirect to error page
-    res.redirect(`https://qr-lac-alpha.vercel.app/campaign/error?message=${encodeURIComponent('Failed to process campaign link! 😢')}`);
+    res.redirect(`${process.env.CLIENT_URL}/campaign/error?message=${encodeURIComponent('Failed to process campaign link! 😢')}`);
   }
 };
 
@@ -294,17 +295,27 @@ const submitCampaignForm = async (req, res) => {
     const userAgent = req.headers['user-agent'];
     const ipAddress = req.ip;
 
-    // Find campaign
+    // Find campaign and get influencer info 🎯
     const campaign = await Campaign.findOne({
       _id: campaignId,
-      'referralLinks.code': referralCode,
-      status: 'active'
-    });
+      'influencers.referralCode': referralCode,
+      // status: 'active'
+    }).populate('voucherId'); // 🎫 Populate voucher details
 
     if (!campaign) {
       return res.status(404).json({
         success: false,
         message: 'Campaign not found or inactive! 🚫'
+      });
+    }
+
+    // Get influencer details 👤
+    const influencer = campaign.influencers.find(inf => inf.referralCode === referralCode);
+    
+    if (!influencer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invalid referral code! 🚫'
       });
     }
 
@@ -321,12 +332,12 @@ const submitCampaignForm = async (req, res) => {
       });
     }
 
-    // Get device and location info
+    // Get device and location info 📱
     const deviceInfo = detectDevice(userAgent);
     const browserInfo = parseUserAgent(userAgent);
     const location = await getLocationFromIP(ipAddress);
 
-    // Create or update user
+    // Create or update user with campaign source info 👤
     let user = await User.findOne({ email: formData.email });
     if (!user) {
       user = new User({
@@ -336,18 +347,88 @@ const submitCampaignForm = async (req, res) => {
         phoneNumber: formData.phoneNumber,
         dateOfBirth: formData.dateOfBirth,
         role: 'customer',
-        isGuest: true
+        isGuest: true,
+        // Add campaign source tracking 🎯
+        guestDetails: {
+          description: `Joined via ${campaign.name} campaign`,
+          claimedFrom: 'campaign',
+          businessId: campaign.businessId,
+          source: {
+            type: 'campaign',
+            campaignId: campaign._id,
+            campaignName: campaign.name,
+            influencerId: influencer._id,
+            influencerName: influencer.name,
+            influencerPlatform: influencer.platform,
+            referralCode: referralCode,
+            joinedAt: new Date()
+          }
+        },
+        // Add voucher claim details 🎫
+        voucherClaims: [{
+          voucherId: campaign.voucherId._id,
+          businessId: campaign.businessId,
+          claimMethod: 'link',
+          expiryDate: campaign.voucherId.endDate,
+          analytics: {
+            clickDate: new Date(),
+            viewDate: new Date(),
+            source: {
+              type: 'campaign',
+              campaignId: campaign._id,
+              influencerId: influencer._id,
+              referralCode: referralCode
+            }
+          }
+        }]
       });
       await user.save();
+    } else {
+      // If user exists, add the voucher claim if they haven't claimed it yet
+      const existingClaim = user.voucherClaims?.find(
+        claim => claim.voucherId.toString() === campaign.voucherId._id.toString()
+      );
+
+      if (!existingClaim) {
+        await User.updateOne(
+          { _id: user._id },
+          {
+            $push: {
+              voucherClaims: {
+                voucherId: campaign.voucherId._id,
+                businessId: campaign.businessId,
+                claimMethod: 'link',
+                expiryDate: campaign.voucherId.endDate,
+                analytics: {
+                  clickDate: new Date(),
+                  viewDate: new Date(),
+                  source: {
+                    type: 'campaign',
+                    campaignId: campaign._id,
+                    influencerId: influencer._id,
+                    referralCode: referralCode
+                  }
+                }
+              }
+            }
+          }
+        );
+      }
     }
 
-    // Create lead
+    // Create lead with enhanced tracking 📊
     const lead = new CampaignLead({
       campaignId,
       referralCode,
       businessId: campaign.businessId,
       userId: user._id,
       formData,
+      influencerDetails: {
+        id: influencer._id,
+        name: influencer.name,
+        platform: influencer.platform,
+        type: influencer.type
+      },
       analytics: {
         deviceType: deviceInfo.type,
         browser: browserInfo.browser,
@@ -357,30 +438,123 @@ const submitCampaignForm = async (req, res) => {
         referrer: req.headers.referer,
         formFillTime: req.body.formFillTime,
         clickTimestamp: req.body.clickTimestamp,
-        formViewTimestamp: req.body.formViewTimestamp
+        formViewTimestamp: req.body.formViewTimestamp,
+        submissionTimestamp: new Date()
       }
     });
 
     await lead.save();
 
-    // Update campaign analytics
-    const linkIndex = campaign.referralLinks.findIndex(link => link.code === referralCode);
-    campaign.referralLinks[linkIndex].analytics.formSubmissions++;
-    campaign.analytics.formSubmissions++;
+    // Update influencer stats 📈
+    const influencerIndex = campaign.influencers.findIndex(inf => inf.referralCode === referralCode);
+    campaign.influencers[influencerIndex].stats.conversions++;
+    
+    // Update campaign analytics 📊
+    campaign.analytics.formSubmissions = (campaign.analytics.formSubmissions || 0) + 1;
+    campaign.analytics.totalConversions = (campaign.analytics.totalConversions || 0) + 1;
     
     // Calculate conversion rate
-    campaign.referralLinks[linkIndex].analytics.conversionRate = 
-      (campaign.referralLinks[linkIndex].analytics.formSubmissions / 
-       campaign.referralLinks[linkIndex].analytics.totalClicks) * 100;
+    campaign.analytics.conversionRate = 
+      (campaign.analytics.totalConversions / campaign.analytics.totalClicks) * 100;
 
     await campaign.save();
+
+    // Generate claim ID 🎫
+    const claimId = crypto.randomBytes(16).toString('hex');
+
+    // Create rich QR data object 🔐
+    const qrData = {
+      claimId,                    // Unique claim identifier
+      voucherId: campaign.voucherId._id,     // Voucher ID
+      code: campaign.voucherId.code,         // Voucher code
+      businessId: campaign.businessId,       // Business ID
+      userId: user._id,           // User ID
+      type: 'claimed_voucher',    // Type identifier
+      timestamp: new Date(),      // Claim timestamp
+      expiryDate: campaign.voucherId.endDate // Expiry date
+    };
+
+    // Generate secure hash for verification 🔒
+    const dataString = JSON.stringify(qrData);
+    const hash = crypto
+      .createHash('sha256')
+      .update(dataString)
+      .digest('hex');
+
+    // Add hash to QR data
+    qrData.hash = hash;
+
+    // Generate QR code with all data 📱
+    const qrCode = await QRCode.toDataURL(JSON.stringify(qrData));
+
+    // Update voucher analytics 📊
+    await Coupon.updateOne(
+      { _id: campaign.voucherId._id },
+      { 
+        $inc: { 
+          'analytics.redemptions': 1,
+          'analytics.qrCodeGenerations': 1,
+          currentUsage: 1
+        },
+        $push: {
+          'qrHistory': {
+            userId: user._id,
+            generatedAt: new Date(),
+            hash: hash
+          }
+        }
+      }
+    );
+
+    // Update user's voucher claim status
+    await User.updateOne(
+      { 
+        _id: user._id,
+        'voucherClaims.voucherId': campaign.voucherId._id 
+      },
+      {
+        $set: {
+          'voucherClaims.$.qrGenerated': true,
+          'voucherClaims.$.qrGeneratedAt': new Date(),
+          'voucherClaims.$.hash': hash
+        }
+      }
+    );
 
     res.status(201).json({
       success: true,
       message: 'Form submitted successfully! 🎉',
       data: {
         leadId: lead._id,
-        userId: user._id
+        userId: user._id,
+        campaign: {
+          id: campaign._id,
+          name: campaign.name,
+          influencer: {
+            name: influencer.name,
+            platform: influencer.platform
+          }
+        },
+        voucher: {
+          id: campaign.voucherId._id,
+          title: campaign.voucherId.title,
+          description: campaign.voucherId.description,
+          code: campaign.voucherId.code,
+          discountType: campaign.voucherId.discountType,
+          discountValue: campaign.voucherId.discountValue,
+          minimumPurchase: campaign.voucherId.minimumPurchase,
+          maximumDiscount: campaign.voucherId.maximumDiscount,
+          expiryDate: campaign.voucherId.endDate,
+          usageLimit: campaign.voucherId.usageLimit,
+          currentUsage: campaign.voucherId.currentUsage,
+          qrCode,
+          hash  // Include hash for verification
+        },
+        claim: {
+          id: claimId,
+          generatedAt: new Date(),
+          status: 'active'
+        }
       }
     });
   } catch (error) {
@@ -526,6 +700,9 @@ const getAllCampaigns = async (req, res) => {
 
     const total = await Campaign.countDocuments(query);
 
+    // Get API URL from env 🌐
+    const apiUrl = process.env.BASE_URL;
+
     // Process campaigns with proper data structure 🏗️
     const processedCampaigns = campaigns.map(campaign => {
       const now = new Date();
@@ -547,8 +724,8 @@ const getAllCampaigns = async (req, res) => {
         type: inf.type,
         platform: inf.platform,
         referralCode: inf.referralCode,
-        // Format link as API endpoint
-        referralLink: `https://qr-backend-ruby.vercel.app/api/campaigns/click/${inf.referralCode}`,
+        // Format link as API endpoint using env URL
+        referralLink: `${apiUrl}/api/campaigns/click/${inf.referralCode}`,
         stats: {
           clicks: inf.stats?.clicks || 0,
           conversions: inf.stats?.conversions || 0,

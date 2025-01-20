@@ -31,11 +31,27 @@ const userSchema = new mongoose.Schema({
     description: String,
     claimedFrom: {
       type: String,
-      enum: ['widget', 'popup', 'qr']
+      enum: ['widget', 'popup', 'qr', 'campaign']
     },
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User'
+    },
+    source: {
+      type: {
+        type: String,
+        enum: ['campaign', 'widget', 'popup', 'qr']
+      },
+      campaignId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Campaign'
+      },
+      campaignName: String,
+      influencerId: mongoose.Schema.Types.ObjectId,
+      influencerName: String,
+      influencerPlatform: String,
+      referralCode: String,
+      joinedAt: Date
     }
   },
   picUrl: String,

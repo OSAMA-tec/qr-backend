@@ -9,8 +9,8 @@ const getBusinessProfile = async (req, res) => {
   try {
     const userId = req.user.userId;
 
-    const business = await User.findOne({
-      _id: userId,
+    const business = await User.findOne({ 
+      _id: userId, 
       role: "business",
     }).select(
       "-password -resetPasswordToken -resetPasswordExpires -verificationToken"
@@ -24,7 +24,7 @@ const getBusinessProfile = async (req, res) => {
     }
 
     // Get subscription status
-    const subscription = await Subscription.findOne({
+    const subscription = await Subscription.findOne({ 
       businessId: userId,
       status: "active",
     }).select("plan status billing.currentPeriodEnd");
@@ -554,7 +554,7 @@ const getCustomerDetails = async (req, res) => {
       userId: customerId,
       businessId,
     })
-      .sort({ createdAt: -1 })
+    .sort({ createdAt: -1 })
       .select("amount createdAt voucherId location");
 
     // Calculate customer metrics
@@ -598,7 +598,7 @@ const listStaff = async (req, res) => {
       role: { $in: ["manager", "staff"] },
     })
       .select("firstName lastName email role permissions lastLogin")
-      .sort({ role: 1, firstName: 1 });
+    .sort({ role: 1, firstName: 1 });
 
     res.json({
       success: true,
@@ -780,10 +780,10 @@ const getAllBusinesses = async (req, res) => {
     // Get subscription details for each business
     const businessesWithDetails = await Promise.all(
       businesses.map(async (business) => {
-        const subscription = await Subscription.findOne({
+        const subscription = await Subscription.findOne({ 
           businessId: business._id,
         }).sort({ createdAt: -1 }); // Get the most recent subscription
-
+        
         // Format business data
         return {
           id: business._id,
@@ -849,23 +849,23 @@ const getAllBusinesses = async (req, res) => {
           },
           subscription: subscription
             ? {
-                plan: subscription.plan,
-                status: subscription.status,
-                validUntil: subscription.billing?.currentPeriodEnd,
-                autoRenew: !subscription.billing?.cancelAtPeriodEnd,
-                features: subscription.features || {},
-                stripeDetails: {
-                  customerId: subscription.stripeCustomerId,
+            plan: subscription.plan,
+            status: subscription.status,
+            validUntil: subscription.billing?.currentPeriodEnd,
+            autoRenew: !subscription.billing?.cancelAtPeriodEnd,
+            features: subscription.features || {},
+            stripeDetails: {
+              customerId: subscription.stripeCustomerId,
                   subscriptionId: subscription.stripeSubscriptionId,
                 },
               }
             : {
                 plan: "No active subscription",
                 status: "inactive",
-                validUntil: null,
-                autoRenew: false,
+            validUntil: null,
+            autoRenew: false,
                 features: {},
-              },
+          },
           gdprConsent: {
             marketing: business.gdprConsent?.marketing || false,
             analytics: business.gdprConsent?.analytics || false,
@@ -967,7 +967,7 @@ const getAllBusinesses = async (req, res) => {
       error:
         process.env.NODE_ENV === "development"
           ? {
-              message: error.message,
+        message: error.message,
               stack: error.stack,
             }
           : undefined,
@@ -1089,4 +1089,4 @@ module.exports = {
   removeStaffMember,
   getAllBusinesses,
   updateCustomerDetails,
-};
+}; 

@@ -20,6 +20,20 @@ const campaignLeadSchema = new mongoose.Schema({
     required: true
   },
 
+  // Influencer Details 👤
+  influencerDetails: {
+    id: mongoose.Schema.Types.ObjectId,
+    name: String,
+    platform: {
+      type: String,
+      enum: ['instagram', 'facebook', 'twitter', 'tiktok', 'youtube', 'other']
+    },
+    type: {
+      type: String,
+      enum: ['individual', 'company', 'partner']
+    }
+  },
+
   // Lead Info
   userId: {
     type: mongoose.Schema.Types.ObjectId,
