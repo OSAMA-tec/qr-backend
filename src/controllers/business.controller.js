@@ -1291,6 +1291,183 @@ const getDashboardStats = async (req, res) => {
   }
 };
 
+// Get top customers based on voucher claims 🏆
+const getTopCustomers = async (req, res) => {
+  try {
+    const businessId = req.user.userId;
+    const businessObjectId = new mongoose.Types.ObjectId(businessId);
+
+    // Get top 5 customers with most voucher claims 📊
+    const topCustomers = await User.aggregate([
+      // Match users who have claimed vouchers from this business
+      {
+        $match: {
+          "voucherClaims.businessId": businessObjectId
+        }
+      },
+      // Add fields for analytics
+      {
+        $addFields: {
+          // Filter voucher claims for this business
+          businessClaims: {
+            $filter: {
+              input: "$voucherClaims",
+              as: "claim",
+              cond: { $eq: ["$$claim.businessId", businessObjectId] }
+            }
+          }
+        }
+      },
+      // Add calculated fields
+      {
+        $addFields: {
+          totalClaims: { $size: "$businessClaims" },
+          activeClaims: {
+            $size: {
+              $filter: {
+                input: "$businessClaims",
+                as: "claim",
+                cond: { $eq: ["$$claim.status", "claimed"] }
+              }
+            }
+          },
+          redeemedClaims: {
+            $size: {
+              $filter: {
+                input: "$businessClaims",
+                as: "claim",
+                cond: { $eq: ["$$claim.status", "redeemed"] }
+              }
+            }
+          }
+        }
+      },
+      // Sort by total claims descending
+      {
+        $sort: {
+          totalClaims: -1,
+          redeemedClaims: -1
+        }
+      },
+      // Limit to top 5
+      {
+        $limit: 5
+      },
+      // Lookup transaction details
+      {
+        $lookup: {
+          from: "transactions",
+          let: { userId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ["$userId", "$$userId"] },
+                    { $eq: ["$businessId", businessObjectId] }
+                  ]
+                }
+              }
+            }
+          ],
+          as: "transactions"
+        }
+      },
+      // Project final fields
+      {
+        $project: {
+          _id: 1,
+          firstName: 1,
+          lastName: 1,
+          email: 1,
+          phoneNumber: 1,
+          dateOfBirth: 1,
+          isGuest: 1,
+          metrics: {
+            totalClaims: 1,
+            activeClaims: 1,
+            redeemedClaims: 1,
+            totalSpent: { $sum: "$transactions.amount" },
+            avgOrderValue: { 
+              $cond: [
+                { $gt: [{ $size: "$transactions" }, 0] },
+                { $divide: [{ $sum: "$transactions.amount" }, { $size: "$transactions" }] },
+                0
+              ]
+            },
+            lastClaimDate: { 
+              $max: "$businessClaims.claimDate"
+            },
+            lastTransactionDate: {
+              $max: "$transactions.createdAt"
+            }
+          },
+          source: {
+            type: "$guestDetails.source.type",
+            campaign: {
+              $cond: [
+                { $eq: ["$guestDetails.source.type", "campaign"] },
+                {
+                  name: "$guestDetails.source.campaignName",
+                  influencer: "$guestDetails.source.influencerName"
+                },
+                null
+              ]
+            }
+          }
+        }
+      }
+    ]);
+
+    // Process and format the response
+    const formattedCustomers = topCustomers.map((customer, index) => ({
+      rank: index + 1,
+      id: customer._id,
+      basicInfo: {
+        firstName: customer.firstName,
+        lastName: customer.lastName,
+        email: customer.email,
+        phoneNumber: customer.phoneNumber || null,
+        dateOfBirth: customer.dateOfBirth || null,
+        isGuest: customer.isGuest || false
+      },
+      metrics: {
+        totalClaims: customer.metrics.totalClaims,
+        activeClaims: customer.metrics.activeClaims,
+        redeemedClaims: customer.metrics.redeemedClaims,
+        totalSpent: customer.metrics.totalSpent || 0,
+        avgOrderValue: Number(customer.metrics.avgOrderValue?.toFixed(2)) || 0,
+        lastClaimDate: customer.metrics.lastClaimDate,
+        lastTransactionDate: customer.metrics.lastTransactionDate
+      },
+      source: customer.source.type ? {
+        type: customer.source.type,
+        details: customer.source.campaign
+      } : null
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        customers: formattedCustomers,
+        summary: {
+          totalClaims: formattedCustomers.reduce((sum, c) => sum + c.metrics.totalClaims, 0),
+          totalSpent: formattedCustomers.reduce((sum, c) => sum + c.metrics.totalSpent, 0),
+          avgClaimsPerCustomer: Number((formattedCustomers.reduce((sum, c) => sum + c.metrics.totalClaims, 0) / formattedCustomers.length).toFixed(2))
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error("Get top customers error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch top customers! 😢",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   getBusinessProfile,
   updateBusinessProfile,
@@ -1302,4 +1479,5 @@ module.exports = {
   getAllBusinesses,
   updateCustomerDetails,
   getDashboardStats,
+  getTopCustomers,
 }; 
