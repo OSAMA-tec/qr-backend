@@ -3,6 +3,8 @@ const User = require("../models/user.model");
 const Transaction = require("../models/transaction.model");
 const { Subscription } = require("../models/subscription.model");
 const mongoose = require("mongoose");
+const Coupon = require("../models/coupon.model");
+const CampaignLead = require("../models/campaignLead.model");
 
 // Get business profile 🏢
 const getBusinessProfile = async (req, res) => {
@@ -1086,6 +1088,209 @@ const updateCustomerDetails = async (req, res) => {
   }
 };
 
+// Get dashboard statistics 📊
+const getDashboardStats = async (req, res) => {
+  try {
+    const businessId = req.user.userId;
+    const businessObjectId = new mongoose.Types.ObjectId(businessId);
+
+    // Get date range for monthly stats 📅
+    const today = new Date();
+    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+    
+    // Get last 12 months for trends 📈
+    const last12Months = Array.from({length: 12}, (_, i) => {
+      const date = new Date();
+      date.setMonth(date.getMonth() - i);
+      return {
+        month: date.getMonth(),
+        year: date.getFullYear(),
+        monthYear: `${date.toLocaleString('default', { month: 'short' })} ${date.getFullYear()}`
+      };
+    }).reverse();
+
+    // Get all coupons stats 🎫
+    const couponsStats = await Coupon.aggregate([
+      {
+        $match: { businessId: businessObjectId }
+      },
+      {
+        $group: {
+          _id: null,
+          totalCoupons: { $sum: 1 },
+          activeCoupons: {
+            $sum: {
+              $cond: [
+                { $and: [
+                  { $eq: ["$isActive", true] },
+                  { $or: [
+                    { $eq: ["$endDate", null] },
+                    { $gt: ["$endDate", today] }
+                  ]}
+                ]},
+                1,
+                0
+              ]
+            }
+          },
+          totalQRScans: { $sum: { $ifNull: ["$analytics.qrCodeScans", 0] } },
+          totalRedemptions: { $sum: { $ifNull: ["$analytics.redemptions", 0] } },
+          totalRevenue: { $sum: { $ifNull: ["$analytics.revenue", 0] } }
+        }
+      }
+    ]);
+
+    // Get monthly revenue trends 📈
+    const monthlyRevenue = await Coupon.aggregate([
+      {
+        $match: { 
+          businessId: businessObjectId,
+          "analytics.redemptionHistory": { $exists: true }
+        }
+      },
+      {
+        $unwind: "$analytics.redemptionHistory"
+      },
+      {
+        $group: {
+          _id: {
+            month: { $month: "$analytics.redemptionHistory.date" },
+            year: { $year: "$analytics.redemptionHistory.date" }
+          },
+          revenue: { $sum: "$analytics.redemptionHistory.amount" },
+          sales: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { "_id.year": 1, "_id.month": 1 }
+      }
+    ]);
+
+    // Get customer stats 👥
+    const customerStats = await User.aggregate([
+      {
+        $match: {
+          $or: [
+            { "voucherClaims.businessId": businessObjectId },
+            { "guestDetails.businessId": businessObjectId }
+          ]
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalCustomers: { $sum: 1 },
+          guestCustomers: {
+            $sum: { $cond: [{ $eq: ["$isGuest", true] }, 1, 0] }
+          },
+          activeCustomers: {
+            $sum: {
+              $cond: [
+                { $gt: [{ $size: { $ifNull: ["$voucherClaims", []] } }, 0] },
+                1,
+                0
+              ]
+            }
+          }
+        }
+      }
+    ]);
+
+    // Get device analytics 📱
+    const deviceAnalytics = await CampaignLead.aggregate([
+      {
+        $match: { businessId: businessObjectId }
+      },
+      {
+        $group: {
+          _id: "$analytics.deviceType",
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Get browser analytics 🌐
+    const browserAnalytics = await CampaignLead.aggregate([
+      {
+        $match: { businessId: businessObjectId }
+      },
+      {
+        $group: {
+          _id: "$analytics.browser",
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Process monthly trends data 📊
+    const monthlyTrends = last12Months.map(month => {
+      const monthData = monthlyRevenue.find(m => 
+        m._id.month === month.month + 1 && 
+        m._id.year === month.year
+      ) || { revenue: 0, sales: 0 };
+
+      return {
+        month: month.monthYear,
+        revenue: monthData.revenue || 0,
+        sales: monthData.sales || 0
+      };
+    });
+
+    // Calculate total stats 📊
+    const stats = {
+      coupons: {
+        total: couponsStats[0]?.totalCoupons || 0,
+        active: couponsStats[0]?.activeCoupons || 0,
+        qrScans: couponsStats[0]?.totalQRScans || 0,
+        redemptions: couponsStats[0]?.totalRedemptions || 0
+      },
+      revenue: {
+        total: couponsStats[0]?.totalRevenue || 0,
+        monthly: monthlyTrends[monthlyTrends.length - 1].revenue,
+        trends: monthlyTrends
+      },
+      customers: {
+        total: customerStats[0]?.totalCustomers || 0,
+        active: customerStats[0]?.activeCustomers || 0,
+        guest: customerStats[0]?.guestCustomers || 0
+      },
+      visitors: {
+        devices: deviceAnalytics.map(d => ({
+          type: d._id || 'unknown',
+          count: d.count,
+          percentage: ((d.count / (customerStats[0]?.totalCustomers || 1)) * 100).toFixed(1)
+        })),
+        browsers: browserAnalytics.map(b => ({
+          name: b._id || 'unknown',
+          count: b.count,
+          percentage: ((b.count / (customerStats[0]?.totalCustomers || 1)) * 100).toFixed(1)
+        }))
+      },
+      monthlyStats: {
+        revenue: monthlyTrends,
+        sales: monthlyTrends.map(m => ({
+          month: m.month,
+          count: m.sales
+        }))
+      }
+    };
+
+    res.json({
+      success: true,
+      data: stats
+    });
+
+  } catch (error) {
+    console.error("Dashboard stats error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch dashboard statistics! 😢",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   getBusinessProfile,
   updateBusinessProfile,
@@ -1096,4 +1301,5 @@ module.exports = {
   removeStaffMember,
   getAllBusinesses,
   updateCustomerDetails,
+  getDashboardStats,
 }; 

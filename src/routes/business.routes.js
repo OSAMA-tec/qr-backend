@@ -9,7 +9,8 @@ const {
   addStaffMember,
   removeStaffMember,
   getAllBusinesses,
-  updateCustomerDetails
+  updateCustomerDetails,
+  getDashboardStats
 } = require('../controllers/business.controller');
 
 const {
@@ -50,6 +51,7 @@ router.put('/business-profile', businessProfileValidation, updateBusinessProfile
 router.get('/customers', listCustomers);
 router.get('/customers/:id', getCustomerDetails);
 router.patch('/customers/:id', updateCustomerDetails); // 🆕 New route for updating customer details
+router.get('/dashboard', getDashboardStats);  // Add dashboard stats route 📊
 
 // Staff management routes 👥
 router.get('/staff', listStaff);
