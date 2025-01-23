@@ -1572,6 +1572,87 @@ const getInfluencersList = async (req, res) => {
   }
 };
 
+// Get business by ID 🏢
+const getBusinessById = async (req, res) => {
+  try {
+    const { businessId } = req.body;
+
+    // Validate businessId
+    if (!businessId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Business ID is required! 🚫'
+      });
+    }
+
+    // Find business with all details
+    const business = await User.findOne(
+      { 
+        _id: businessId,
+        role: 'business'
+      }
+    ).select('-password -verificationToken -resetPasswordToken -resetPasswordExpires');
+
+    if (!business) {
+      return res.status(404).json({
+        success: false,
+        message: 'Business not found! 🚫'
+      });
+    }
+
+    // Format business details for response
+    // const businessData = {
+    //   id: business._id,
+    //   email: business.email,
+    //   phoneNumber: business.phoneNumber,
+    //   role: business.role,
+    //   isVerified: business.isVerified,
+    //   createdAt: business.createdAt,
+    //   updatedAt: business.updatedAt,
+    //   profile: {
+    //     businessName: business.businessProfile?.businessName || '',
+    //     logo: business.businessProfile?.logo || '',
+    //     banner: business.businessProfile?.banner || '',
+    //     description: business.businessProfile?.description || '',
+    //     category: business.businessProfile?.category || '',
+    //     website: business.businessProfile?.website || '',
+    //     socialLinks: business.businessProfile?.socialLinks || {},
+    //     location: business.businessProfile?.location || '',
+    //     address: business.businessProfile?.address || '',
+    //     openingHours: business.businessProfile?.openingHours || {},
+    //     contactEmail: business.businessProfile?.contactEmail || '',
+    //     contactPhone: business.businessProfile?.contactPhone || '',
+    //   },
+    //   settings: {
+    //     notifications: business.businessProfile?.settings?.notifications || {},
+    //     appearance: business.businessProfile?.settings?.appearance || {},
+    //     privacy: business.businessProfile?.settings?.privacy || {},
+    //     widgetSettings: business.businessProfile?.widgetSettings || {}
+    //   },
+    //   stats: {
+    //     totalVouchers: business.businessProfile?.stats?.totalVouchers || 0,
+    //     activeVouchers: business.businessProfile?.stats?.activeVouchers || 0,
+    //     totalCustomers: business.businessProfile?.stats?.totalCustomers || 0,
+    //     totalRevenue: business.businessProfile?.stats?.totalRevenue || 0,
+    //     totalRedemptions: business.businessProfile?.stats?.totalRedemptions || 0
+    //   }
+    // };
+
+    res.json({
+      success: true,
+      data: business
+    });
+
+  } catch (error) {
+    console.error('Get business by ID error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch business details! 😢',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   getBusinessProfile,
   updateBusinessProfile,
@@ -1584,5 +1665,6 @@ module.exports = {
   updateCustomerDetails,
   getDashboardStats,
   getTopCustomers,
-  getInfluencersList
+  getInfluencersList,
+  getBusinessById
 }; 
