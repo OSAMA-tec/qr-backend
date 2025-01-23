@@ -103,6 +103,7 @@ const listCustomers = async (req, res) => {
       birthdayMonth,
       birthdayDay,
       birthdayRange,
+      influencer
     } = req.query;
 
     // Convert businessId to ObjectId 🔄
@@ -116,18 +117,28 @@ const listCustomers = async (req, res) => {
       ],
     };
 
+    // Add influencer filter if provided 🎯
+    if (influencer) {
+      baseQuery.$and = baseQuery.$and || [];
+      baseQuery.$and.push({
+        $or: [
+          { "guestDetails.source.influencerName": new RegExp(influencer, "i") },
+          { "guestDetails.source.influencerPlatform": new RegExp(influencer, "i") }
+        ]
+      });
+    }
+
     // Add search filter if provided 🔎
     if (search) {
-      baseQuery.$and = [
-        {
-          $or: [
-            { firstName: new RegExp(search, "i") },
-            { lastName: new RegExp(search, "i") },
-            { email: new RegExp(search, "i") },
-            { phoneNumber: new RegExp(search, "i") },
-          ],
-        },
-      ];
+      baseQuery.$and = baseQuery.$and || [];
+      baseQuery.$and.push({
+        $or: [
+          { firstName: new RegExp(search, "i") },
+          { lastName: new RegExp(search, "i") },
+          { email: new RegExp(search, "i") },
+          { phoneNumber: new RegExp(search, "i") },
+        ],
+      });
     }
 
     // Add status filter if provided 🏷️
@@ -516,7 +527,15 @@ const listCustomers = async (req, res) => {
         qr: processedCustomers.filter(c => c.sourceInfo.type === 'qr').length,
         widget: processedCustomers.filter(c => c.sourceInfo.type === 'widget').length,
         direct: processedCustomers.filter(c => c.sourceInfo.type === 'direct').length
-      }
+      },
+      // Add influencer breakdown 🎯
+      influencerBreakdown: processedCustomers.reduce((acc, customer) => {
+        if (customer.sourceInfo.details?.influencerName) {
+          const key = customer.sourceInfo.details.influencerName;
+          acc[key] = (acc[key] || 0) + 1;
+        }
+        return acc;
+      }, {})
     };
 
     res.json({
@@ -963,7 +982,7 @@ const getAllBusinesses = async (req, res) => {
         sorting: {
           field: sortBy,
           order: sortOrder === 1 ? "asc" : "desc",
-        },
+      },
       },
       message: "Businesses fetched successfully! 🎉",
     });
@@ -1468,6 +1487,91 @@ const getTopCustomers = async (req, res) => {
   }
 };
 
+// Get unique influencers list 🎯
+const getInfluencersList = async (req, res) => {
+  try {
+    const businessId = req.user.userId;
+    const businessObjectId = new mongoose.Types.ObjectId(businessId);
+
+    // Get unique influencers using aggregation 📊
+    const influencers = await User.aggregate([
+      {
+        $match: {
+          "guestDetails.businessId": businessObjectId,
+          "guestDetails.source.influencerName": { $exists: true, $ne: null }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            name: "$guestDetails.source.influencerName",
+            platform: "$guestDetails.source.influencerPlatform"
+          },
+          customersCount: { $sum: 1 },
+          totalRevenue: {
+            $sum: {
+              $reduce: {
+                input: "$voucherClaims",
+                initialValue: 0,
+                in: {
+                  $add: [
+                    "$$value",
+                    { $ifNull: ["$$this.analytics.revenue", 0] }
+                  ]
+                }
+              }
+            }
+          },
+          lastActive: { $max: "$createdAt" }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          name: "$_id.name",
+          platform: "$_id.platform",
+          customersCount: 1,
+          totalRevenue: 1,
+          lastActive: 1
+        }
+      },
+      {
+        $sort: { customersCount: -1 }
+      }
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        influencers: influencers.map(inf => ({
+          name: inf.name,
+          platform: inf.platform,
+          metrics: {
+            customersCount: inf.customersCount,
+            totalRevenue: inf.totalRevenue,
+            lastActive: inf.lastActive
+          }
+        })),
+        summary: {
+          total: influencers.length,
+          totalCustomers: influencers.reduce((sum, inf) => sum + inf.customersCount, 0),
+          totalRevenue: influencers.reduce((sum, inf) => sum + inf.totalRevenue, 0),
+          platformBreakdown: influencers.reduce((acc, inf) => {
+            acc[inf.platform] = (acc[inf.platform] || 0) + 1;
+            return acc;
+          }, {})
+        }
+      }
+    });
+  } catch (error) {
+    console.error("Get influencers list error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch influencers list! 😢"
+    });
+  }
+};
+
 module.exports = {
   getBusinessProfile,
   updateBusinessProfile,
@@ -1480,4 +1584,5 @@ module.exports = {
   updateCustomerDetails,
   getDashboardStats,
   getTopCustomers,
+  getInfluencersList
 }; 
