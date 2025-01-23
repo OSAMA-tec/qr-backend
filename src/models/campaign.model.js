@@ -46,12 +46,6 @@ const campaignSchema = new mongoose.Schema({
   startDate: {
     type: Date,
     required: [true, 'Start date is required! 📅'],
-    validate: {
-      validator: function(v) {
-        return v >= new Date();
-      },
-      message: 'Start date must be in the future!'
-    }
   },
   endDate: {
     type: Date,
