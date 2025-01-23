@@ -127,7 +127,34 @@ const campaignSchema = new mongoose.Schema({
       trim: true
     }],
     interests: [String]
-  }
+  },
+  // Question and Answers for Campaign 📝
+  question: {
+    text: {
+      type: String,
+      trim: true
+    },
+    isRequired: {
+      type: Boolean,
+      default: false
+    }
+  },
+  answers: [{
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    answer: {
+      type: String,
+      trim: true,
+      required: true
+    },
+    submittedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }]
 }, {
   timestamps: true
 });

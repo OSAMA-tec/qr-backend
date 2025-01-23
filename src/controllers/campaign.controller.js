@@ -693,8 +693,9 @@ const getAllCampaigns = async (req, res) => {
     const campaigns = await Campaign.find(query)
       .populate({
         path: 'voucherId',
-        select: 'code title description discountType discountValue startDate endDate isActive',
+        select: 'code title description discountType discountValue startDate endDate isActive question answers',
       })
+      .populate('answers.userId', 'firstName lastName email')
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(parseInt(limit));
@@ -764,6 +765,7 @@ const getAllCampaigns = async (req, res) => {
           "0.00"
       };
 
+      // Add question and answers data
       return {
         id: campaign._id,
         name: campaign.name,
@@ -784,7 +786,22 @@ const getAllCampaigns = async (req, res) => {
           Math.ceil((campaign.endDate - now) / (1000 * 60 * 60 * 24)) : 
           0,
         createdAt: campaign.createdAt,
-        updatedAt: campaign.updatedAt
+        updatedAt: campaign.updatedAt,
+        question: campaign.question,
+        answers: campaign.answers.map(answer => ({
+          id: answer._id,
+          answer: answer.answer,
+          submittedAt: answer.submittedAt,
+          user: answer.userId ? {
+            id: answer.userId._id,
+            name: `${answer.userId.firstName} ${answer.userId.lastName}`,
+            email: answer.userId.email
+          } : null
+        })),
+        answerStats: {
+          totalAnswers: campaign.answers.length,
+          uniqueUsers: new Set(campaign.answers.map(a => a.userId?.toString())).size
+        }
       };
     });
 
@@ -929,11 +946,199 @@ const listCampaigns = async (req, res) => {
   }
 };
 
+// Submit answer for campaign question 📝
+const submitCampaignAnswer = async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    const { answer } = req.body;
+    const userId = req.user.userId;
+
+    // Validate campaignId format
+    if (!mongoose.Types.ObjectId.isValid(campaignId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid campaign ID format! 🚫'
+      });
+    }
+
+    // Find campaign
+    const campaign = await Campaign.findById(campaignId);
+    if (!campaign) {
+      return res.status(404).json({
+        success: false,
+        message: 'Campaign not found! 🔍'
+      });
+    }
+
+    // Check if question exists and is required
+    if (!campaign.question || !campaign.question.text) {
+      return res.status(400).json({
+        success: false,
+        message: 'No question available for this campaign! ❌'
+      });
+    }
+
+    // Check if answer is provided when required
+    if (campaign.question.isRequired && !answer) {
+      return res.status(400).json({
+        success: false,
+        message: 'Answer is required for this question! ❗'
+      });
+    }
+
+    // Check if user already answered
+    const existingAnswer = campaign.answers.find(a => a.userId.toString() === userId);
+    if (existingAnswer) {
+      return res.status(400).json({
+        success: false,
+        message: 'You have already answered this question! ✋'
+      });
+    }
+
+    // Add answer
+    campaign.answers.push({
+      userId,
+      answer,
+      submittedAt: new Date()
+    });
+
+    await campaign.save();
+
+    res.status(201).json({
+      success: true,
+      message: 'Answer submitted successfully! 🎉',
+      data: {
+        answer: campaign.answers[campaign.answers.length - 1]
+      }
+    });
+  } catch (error) {
+    console.error('Submit campaign answer error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to submit answer! 😢'
+    });
+  }
+};
+
+// Update campaign question ❓
+const updateCampaignQuestion = async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    const { question, isRequired = false } = req.body;
+    const businessId = req.user.userId;
+
+    // Validate campaignId format
+    if (!mongoose.Types.ObjectId.isValid(campaignId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid campaign ID format! 🚫'
+      });
+    }
+
+    // Find and update campaign
+    const campaign = await Campaign.findOne({ 
+      _id: campaignId, 
+      businessId 
+    });
+
+    if (!campaign) {
+      return res.status(404).json({
+        success: false,
+        message: 'Campaign not found! 🔍'
+      });
+    }
+
+    // Update question
+    campaign.question = {
+      text: question,
+      isRequired
+    };
+
+    await campaign.save();
+
+    res.json({
+      success: true,
+      message: 'Campaign question updated successfully! 🎉',
+      data: {
+        question: campaign.question
+      }
+    });
+  } catch (error) {
+    console.error('Update campaign question error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update campaign question! 😢'
+    });
+  }
+};
+
+// Get campaign answers 📊
+const getCampaignAnswers = async (req, res) => {
+  try {
+    const { campaignId } = req.params;
+    const businessId = req.user.userId;
+
+    // Validate campaignId format
+    if (!mongoose.Types.ObjectId.isValid(campaignId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid campaign ID format! 🚫'
+      });
+    }
+
+    // Find campaign with populated answers
+    const campaign = await Campaign.findOne({ 
+      _id: campaignId, 
+      businessId 
+    }).populate('answers.userId', 'firstName lastName email');
+
+    if (!campaign) {
+      return res.status(404).json({
+        success: false,
+        message: 'Campaign not found! 🔍'
+      });
+    }
+
+    // Format answers
+    const answers = campaign.answers.map(answer => ({
+      id: answer._id,
+      answer: answer.answer,
+      submittedAt: answer.submittedAt,
+      user: {
+        id: answer.userId._id,
+        name: `${answer.userId.firstName} ${answer.userId.lastName}`,
+        email: answer.userId.email
+      }
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        question: campaign.question,
+        answers,
+        stats: {
+          totalAnswers: answers.length,
+          uniqueUsers: new Set(answers.map(a => a.user.id)).size
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get campaign answers error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch campaign answers! 😢'
+    });
+  }
+};
+
 module.exports = {
   createCampaign,
   trackCampaignClick,
   submitCampaignForm,
   getCampaignAnalytics,
   getAllCampaigns,
-  listCampaigns
+  listCampaigns,
+  submitCampaignAnswer,
+  updateCampaignQuestion,
+  getCampaignAnswers
 }; 

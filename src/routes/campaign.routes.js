@@ -6,6 +6,9 @@ const {
   submitCampaignForm,
   getCampaignAnalytics,
   getAllCampaigns,
+  submitCampaignAnswer,
+  updateCampaignQuestion,
+  getCampaignAnswers
 } = require("../controllers/campaign.controller");
 
 const authMiddleware = require("../middleware/auth.middleware");
@@ -33,14 +36,23 @@ router.post(
   "/submit",
   campaignFormValidation,
   submitCampaignForm
-); // Submit campaign form    //tt
+); // Submit campaign form
+
+// Protected routes for both business and customers 🔒
+router.use(authMiddleware);
+
+// Answer submission route (for customers)
+router.post("/:campaignId/answer", submitCampaignAnswer);
 
 // Protected business routes 🔒
-router.use(authMiddleware);
 router.use(isBusinessMiddleware);
 
 router.post("/", campaignValidation, createCampaign); // Create campaign
 router.get("/", getAllCampaigns); // Get all campaigns for business
 router.get("/:campaignId/analytics", getCampaignAnalytics); // Get campaign analytics
+
+// Question and Answer routes (for business)
+router.put("/:campaignId/question", updateCampaignQuestion); // Update campaign question
+router.get("/:campaignId/answers", getCampaignAnswers); // Get campaign answers
 
 module.exports = router;

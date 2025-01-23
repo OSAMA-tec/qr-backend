@@ -111,7 +111,34 @@ const couponSchema = new mongoose.Schema({
     clicks: { type: Number, default: 0 },
     redemptions: { type: Number, default: 0 },
     totalRevenue: { type: Number, default: 0 }
-  }
+  },
+  // Question and Answers for Voucher 📝
+  question: {
+    text: {
+      type: String,
+      trim: true
+    },
+    isRequired: {
+      type: Boolean,
+      default: false
+    }
+  },
+  answers: [{
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true
+    },
+    answer: {
+      type: String,
+      trim: true,
+      required: true
+    },
+    submittedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }]
 }, {
   timestamps: true
 });
