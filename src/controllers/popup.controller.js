@@ -233,8 +233,7 @@ const getClaimedVoucher = async (req, res) => {
       Coupon.findOne({
         _id: voucherId,
         isActive: true,
-        // usedTrue: true
-      }).populate('businessId', 'businessProfile businessId')
+      }).populate('businessId', 'businessProfile')
     ]);
 
     if (!user || !voucher) {
@@ -275,11 +274,11 @@ const getClaimedVoucher = async (req, res) => {
       { 
         $inc: { 
           'analytics.redemptions': 1,
-          'analytics.qrCodeGenerations': 1, // New analytics field
+          'analytics.qrCodeGenerations': 1,
           currentUsage: 1
         },
         $push: {
-          'qrHistory': {  // Track QR code generation
+          'qrHistory': {
             userId: user._id,
             generatedAt: new Date(),
             hash: hash
@@ -303,6 +302,9 @@ const getClaimedVoucher = async (req, res) => {
       }
     );
 
+    // Get business details from populated data 🏢
+    const businessDetails = voucher.businessId.businessProfile || {};
+
     res.json({
       success: true,
       data: {
@@ -310,7 +312,8 @@ const getClaimedVoucher = async (req, res) => {
           firstName: user.firstName,
           lastName: user.lastName,
           email: user.email,
-          phoneNumber: user.phoneNumber // Added phone
+          phoneNumber: user.phoneNumber,
+          picUrl: user.picUrl || ''
         },
         voucher: {
           id: voucher._id,
@@ -325,13 +328,17 @@ const getClaimedVoucher = async (req, res) => {
           usageLimit: voucher.usageLimit,
           currentUsage: voucher.currentUsage,
           qrCode,
-          hash  // Include hash for verification
+          hash
         },
         business: {
           id: voucher.businessId._id,
-          name: voucher.businessId.businessProfile.businessName,
-          logo: voucher.businessId.businessProfile.logo,
-          location: voucher.businessId.businessProfile.location
+          name: businessDetails.businessName || '',
+          logo: businessDetails.logo || '',
+          location: businessDetails.location || '',
+          email: businessDetails.email || '',
+          phone: businessDetails.phone || '',
+          website: businessDetails.website || '',
+          address: businessDetails.address || ''
         },
         claim: {
           id: claimId,
