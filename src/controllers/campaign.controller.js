@@ -158,7 +158,7 @@ const trackCampaignClick = async (req, res) => {
       // status: 'active',
       // startDate: { $lte: new Date() },
       // endDate: { $gte: new Date() }
-    });
+    }).populate('businessId', 'businessProfile email'); // 👈 Populate business details
 
     if (!campaign) {
       return res.status(404).json({
@@ -255,6 +255,7 @@ const trackCampaignClick = async (req, res) => {
         id: campaign._id,
         name: campaign.name,
         type: campaign.type,
+        businessId: campaign.businessId._id,
         voucher: voucher ? {
           code: voucher.code,
           title: voucher.title,
