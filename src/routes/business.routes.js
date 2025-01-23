@@ -34,6 +34,7 @@ const isAdmin = (req, res, next) => {
   }
   next();
 };
+router.post('/business-details', getBusinessById);
 
 // Apply auth middleware to all routes 🔒
 router.use(authMiddleware);
@@ -49,7 +50,6 @@ router.get(
 // Business profile routes 🏢
 router.get('/business-profile', getBusinessProfile);
 router.put('/business-profile', businessProfileValidation, updateBusinessProfile);
-router.post('/business-details', getBusinessById);
 
 // Customer management routes 👥
 router.get('/customers', listCustomers);
