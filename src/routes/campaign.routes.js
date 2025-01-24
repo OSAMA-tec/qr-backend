@@ -37,12 +37,12 @@ router.post(
   campaignFormValidation,
   submitCampaignForm
 ); // Submit campaign form
+// Answer submission route (for customers)
+router.post("/:campaignId/answer", submitCampaignAnswer);
 
 // Protected routes for both business and customers 🔒
 router.use(authMiddleware);
 
-// Answer submission route (for customers)
-router.post("/:campaignId/answer", submitCampaignAnswer);
 
 // Protected business routes 🔒
 router.use(isBusinessMiddleware);

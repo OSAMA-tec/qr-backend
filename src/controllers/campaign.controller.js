@@ -256,13 +256,23 @@ const trackCampaignClick = async (req, res) => {
         name: campaign.name,
         type: campaign.type,
         businessId: campaign.businessId._id,
+        business: {  // Include business details
+          id: campaign.businessId._id,
+          email: campaign.businessId.email,
+          businessName: campaign.businessId.businessProfile?.businessName,
+          logo: campaign.businessId.businessProfile?.logo,
+          description: campaign.businessId.businessProfile?.description,
+          location: campaign.businessId.businessProfile?.location
+        },
+        question: campaign.question || null, // Include campaign question
         voucher: voucher ? {
           code: voucher.code,
           title: voucher.title,
           description: voucher.description,
           discountType: voucher.discountType,
           discountValue: voucher.discountValue,
-          minimumPurchase: voucher.minimumPurchase
+          minimumPurchase: voucher.minimumPurchase,
+          question: voucher.question || null
         } : null
       },
       tracking: {
@@ -950,14 +960,30 @@ const listCampaigns = async (req, res) => {
 const submitCampaignAnswer = async (req, res) => {
   try {
     const { campaignId } = req.params;
-    const { answer } = req.body;
-    const userId = req.user.userId;
+    const { answer, email } = req.body;  // Get email from request body
 
     // Validate campaignId format
     if (!mongoose.Types.ObjectId.isValid(campaignId)) {
       return res.status(400).json({
         success: false,
         message: 'Invalid campaign ID format! 🚫'
+      });
+    }
+
+    // Validate email
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required! 📧'
+      });
+    }
+
+    // Find user by email
+    const user = await User.findOne({ email: email.toLowerCase() });
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found with this email! 👤'
       });
     }
 
@@ -987,7 +1013,7 @@ const submitCampaignAnswer = async (req, res) => {
     }
 
     // Check if user already answered
-    const existingAnswer = campaign.answers.find(a => a.userId.toString() === userId);
+    const existingAnswer = campaign.answers.find(a => a.userId.toString() === user._id.toString());
     if (existingAnswer) {
       return res.status(400).json({
         success: false,
@@ -997,7 +1023,7 @@ const submitCampaignAnswer = async (req, res) => {
 
     // Add answer
     campaign.answers.push({
-      userId,
+      userId: user._id,  // Use found user's ID
       answer,
       submittedAt: new Date()
     });
@@ -1008,7 +1034,11 @@ const submitCampaignAnswer = async (req, res) => {
       success: true,
       message: 'Answer submitted successfully! 🎉',
       data: {
-        answer: campaign.answers[campaign.answers.length - 1]
+        answer: campaign.answers[campaign.answers.length - 1],
+        user: {
+          email: user.email,
+          name: `${user.firstName} ${user.lastName}`
+        }
       }
     });
   } catch (error) {
@@ -1024,7 +1054,7 @@ const submitCampaignAnswer = async (req, res) => {
 const updateCampaignQuestion = async (req, res) => {
   try {
     const { campaignId } = req.params;
-    const { question, isRequired = false } = req.body;
+    const { text, isRequired = false } = req.body;
     const businessId = req.user.userId;
 
     // Validate campaignId format
@@ -1050,7 +1080,7 @@ const updateCampaignQuestion = async (req, res) => {
 
     // Update question
     campaign.question = {
-      text: question,
+      text: text,
       isRequired
     };
 
