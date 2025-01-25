@@ -49,7 +49,7 @@ router.get('/claimed-users', getClaimedVoucherUsers);
 router.post('/validate', voucherValidationRules, validateVoucher); //tt
 router.post('/redeem', voucherRedemptionValidation, redeemVoucher); //tt
 // QR code scanning endpoint
-router.post('/scan', voucherValidationRules, scanVoucher); //tt
+router.post('/scan', scanVoucher); //tt
 // ID specific routes
 router.get('/:id', getVoucherDetails); //tt
 router.put('/:id', voucherUpdateValidation, updateVoucher); //tt

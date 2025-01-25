@@ -772,7 +772,6 @@ const scanVoucher = async (req, res) => {
   try {
     const businessId = req.user.userId;
     let voucherData;
-
     // Get voucher data from either parsed QR data or direct request body 🔄
     if (req.parsedQrData) {
       voucherData = req.parsedQrData;
@@ -812,9 +811,9 @@ const scanVoucher = async (req, res) => {
     const voucher = await Coupon.findOne({
       code: voucherData.code,
       businessId,
-      isActive: true,
-      startDate: { $lte: new Date() },
-      endDate: { $gte: new Date() }
+      // isActive: true,
+      // startDate: { $lte: new Date() },
+      // endDate: { $gte: new Date() }
     });
 
     if (!voucher) {
