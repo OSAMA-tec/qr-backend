@@ -15,7 +15,8 @@ const {
   getInfluencersList,
   getBusinessById,
   updateTermsAndConditions,
-  getTermsAndConditions
+  getTermsAndConditions,
+  getAllCustomers
 } = require('../controllers/business.controller');
 
 const {
@@ -59,6 +60,7 @@ router.get('/terms-conditions', getTermsAndConditions);
 
 // Customer management routes 👥
 router.get('/customers', listCustomers);
+router.get('/customers/all', getAllCustomers);  // Add new route for advanced filtering
 router.get('/customers/top', getTopCustomers);  // Add top customers route 🏆
 router.get('/influencers', getInfluencersList); // 🆕 Add influencers list route
 router.get('/customers/:id', getCustomerDetails);

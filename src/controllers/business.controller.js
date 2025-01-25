@@ -1742,6 +1742,415 @@ const getTermsAndConditions = async (req, res) => {
   }
 };
 
+// Get all customers with advanced filters 📊
+const getAllCustomers = async (req, res) => {
+  try {
+    const businessId = req.user.userId;
+    const businessObjectId = new mongoose.Types.ObjectId(businessId);
+    const {
+      // Date Range Filters
+      birthDateStart,
+      birthDateEnd,
+      joinDateStart,
+      joinDateEnd,
+      lastActiveStart,
+      lastActiveEnd,
+      lastLoginStart,
+      lastLoginEnd,
+      lastVisitStart,
+      lastVisitEnd,
+
+      // Status Filters
+      verificationStatus,
+      activeStatus,
+      isGuest,
+
+      // Amount Range Filters
+      spentAmountMin,
+      spentAmountMax,
+      averageSpentMin,
+      averageSpentMax,
+      totalDiscountsMin,
+      totalDiscountsMax,
+
+      // Voucher Filters
+      hasVouchers,
+      voucherClaimsMin,
+      voucherClaimsMax,
+      voucherStatus,
+
+      // Consent Filters
+      consentStatus,
+      consentDateStart,
+      consentDateEnd,
+
+      // Source Filters
+      sourceType,
+      campaignId,
+      campaignName,
+      influencerName,
+      influencerPlatform,
+
+      // Engagement Filters
+      voucherViewsMin,
+      voucherViewsMax,
+      voucherClicksMin,
+      voucherClicksMax,
+      conversionRateMin,
+      conversionRateMax,
+
+      // Visit Filters
+      visitsCountMin,
+      visitsCountMax,
+
+      // Search and Sorting
+      search,
+      searchFields,
+      sortBy = 'createdAt',
+      sortOrder = 'desc',
+
+      // Pagination and Format
+      page = 1,
+      limit = 10,
+      format = 'json',
+      exportFormat
+    } = req.query;
+
+    // Build base query 🏗️
+    const query = {
+      $or: [
+        { "voucherClaims.businessId": businessObjectId },
+        { "guestDetails.businessId": businessObjectId }
+      ]
+    };
+
+    // Add Date Range Filters 📅
+    if (birthDateStart || birthDateEnd) {
+      query.dateOfBirth = {};
+      if (birthDateStart) query.dateOfBirth.$gte = new Date(birthDateStart);
+      if (birthDateEnd) query.dateOfBirth.$lte = new Date(birthDateEnd);
+    }
+
+    if (joinDateStart || joinDateEnd) {
+      query.createdAt = {};
+      if (joinDateStart) query.createdAt.$gte = new Date(joinDateStart);
+      if (joinDateEnd) query.createdAt.$lte = new Date(joinDateEnd);
+    }
+
+    if (lastLoginStart || lastLoginEnd) {
+      query.lastLogin = {};
+      if (lastLoginStart) query.lastLogin.$gte = new Date(lastLoginStart);
+      if (lastLoginEnd) query.lastLogin.$lte = new Date(lastLoginEnd);
+    }
+
+    // Add Status Filters 🏷️
+    if (verificationStatus) {
+      query.isVerified = verificationStatus === 'verified';
+    }
+
+    if (activeStatus) {
+      query.isActive = activeStatus === 'active';
+    }
+
+    if (isGuest !== undefined) {
+      query.isGuest = isGuest === 'true';
+    }
+
+    // Add Source Filters 🎯
+    if (sourceType) {
+      query['guestDetails.source.type'] = sourceType;
+    }
+
+    if (campaignId) {
+      query['guestDetails.source.campaignId'] = new mongoose.Types.ObjectId(campaignId);
+    }
+
+    if (campaignName) {
+      query['guestDetails.source.campaignName'] = new RegExp(campaignName, 'i');
+    }
+
+    if (influencerName) {
+      query['guestDetails.source.influencerName'] = new RegExp(influencerName, 'i');
+    }
+
+    if (influencerPlatform) {
+      query['guestDetails.source.influencerPlatform'] = influencerPlatform;
+    }
+
+    // Add Consent Filters 🔒
+    if (consentStatus) {
+      switch (consentStatus) {
+        case 'marketing':
+          query['gdprConsent.marketing'] = true;
+          break;
+        case 'analytics':
+          query['gdprConsent.analytics'] = true;
+          break;
+        case 'both':
+          query['gdprConsent.marketing'] = true;
+          query['gdprConsent.analytics'] = true;
+          break;
+        case 'none':
+          query.$or = [
+            { 'gdprConsent.marketing': false },
+            { 'gdprConsent.analytics': false }
+          ];
+          break;
+      }
+    }
+
+    if (consentDateStart || consentDateEnd) {
+      query['gdprConsent.consentDate'] = {};
+      if (consentDateStart) query['gdprConsent.consentDate'].$gte = new Date(consentDateStart);
+      if (consentDateEnd) query['gdprConsent.consentDate'].$lte = new Date(consentDateEnd);
+    }
+
+    // Add Search Filter 🔍
+    if (search) {
+      const searchRegex = new RegExp(search, 'i');
+      const searchFieldsArray = searchFields ? searchFields.split(',') : ['email', 'firstName', 'lastName', 'phoneNumber'];
+      query.$or = searchFieldsArray.map(field => ({ [field]: searchRegex }));
+    }
+
+    // Get total count for pagination 📄
+    const total = await User.countDocuments(query);
+
+    // Build aggregation pipeline 📊
+    const pipeline = [
+      { $match: query },
+      // Add default arrays if null
+      {
+        $addFields: {
+          transactions: { $ifNull: ['$transactions', []] },
+          voucherClaims: { $ifNull: ['$voucherClaims', []] }
+        }
+      },
+      // Lookup voucher details
+      {
+        $lookup: {
+          from: 'coupons',
+          localField: 'voucherClaims.voucherId',
+          foreignField: '_id',
+          as: 'voucherDetails'
+        }
+      },
+      // Lookup transaction details
+      {
+        $lookup: {
+          from: 'transactions',
+          let: { userId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$userId', '$$userId'] },
+                    { $eq: ['$businessId', businessObjectId] }
+                  ]
+                }
+              }
+            }
+          ],
+          as: 'transactions'
+        }
+      },
+      // Add calculated fields
+      {
+        $addFields: {
+          totalSpent: { $sum: '$transactions.amount' },
+          averageSpent: {
+            $cond: [
+              { $gt: [{ $size: '$transactions' }, 0] },
+              { $divide: [{ $sum: '$transactions.amount' }, { $size: '$transactions' }] },
+              0
+            ]
+          },
+          totalDiscounts: { $sum: '$transactions.discountAmount' },
+          visitsCount: { $size: '$transactions' },
+          voucherClaimsCount: { $size: '$voucherClaims' },
+          lastVisit: { $max: '$transactions.createdAt' }
+        }
+      }
+    ];
+
+    // Add Amount Range Filters 💰
+    if (spentAmountMin || spentAmountMax) {
+      pipeline.push({
+        $match: {
+          totalSpent: {
+            ...(spentAmountMin && { $gte: parseFloat(spentAmountMin) }),
+            ...(spentAmountMax && { $lte: parseFloat(spentAmountMax) })
+          }
+        }
+      });
+    }
+
+    if (averageSpentMin || averageSpentMax) {
+      pipeline.push({
+        $match: {
+          averageSpent: {
+            ...(averageSpentMin && { $gte: parseFloat(averageSpentMin) }),
+            ...(averageSpentMax && { $lte: parseFloat(averageSpentMax) })
+          }
+        }
+      });
+    }
+
+    // Add Visit Filters 👥
+    if (visitsCountMin || visitsCountMax) {
+      pipeline.push({
+        $match: {
+          visitsCount: {
+            ...(visitsCountMin && { $gte: parseInt(visitsCountMin) }),
+            ...(visitsCountMax && { $lte: parseInt(visitsCountMax) })
+          }
+        }
+      });
+    }
+
+    // Add Voucher Filters 🎫
+    if (voucherClaimsMin || voucherClaimsMax) {
+      pipeline.push({
+        $match: {
+          voucherClaimsCount: {
+            ...(voucherClaimsMin && { $gte: parseInt(voucherClaimsMin) }),
+            ...(voucherClaimsMax && { $lte: parseInt(voucherClaimsMax) })
+          }
+        }
+      });
+    }
+
+    // Add sorting 📋
+    pipeline.push({ $sort: { [sortBy]: sortOrder === 'asc' ? 1 : -1 } });
+
+    // Add pagination 📄
+    if (!exportFormat) {
+      pipeline.push(
+        { $skip: (parseInt(page) - 1) * parseInt(limit) },
+        { $limit: parseInt(limit) }
+      );
+    }
+
+    // Execute aggregation
+    let customers = await User.aggregate(pipeline);
+
+    // Format response data 🔄
+    customers = customers.map(customer => ({
+      id: customer._id,
+      basicInfo: {
+        firstName: customer.firstName,
+        lastName: customer.lastName,
+        email: customer.email,
+        phoneNumber: customer.phoneNumber,
+        dateOfBirth: customer.dateOfBirth,
+        isGuest: customer.isGuest,
+        isVerified: customer.isVerified,
+        isActive: customer.isActive
+      },
+      metrics: {
+        totalSpent: customer.totalSpent || 0,
+        averageSpent: customer.averageSpent || 0,
+        totalDiscounts: customer.totalDiscounts || 0,
+        visitsCount: customer.visitsCount || 0,
+        voucherClaimsCount: customer.voucherClaimsCount || 0,
+        lastVisit: customer.lastVisit
+      },
+      source: customer.guestDetails?.source || null,
+      gdprConsent: customer.gdprConsent || {
+        marketing: false,
+        analytics: false
+      },
+      joinedDate: customer.createdAt,
+      lastLogin: customer.lastLogin
+    }));
+
+    // Handle export format 📤
+    if (exportFormat === 'csv') {
+      // Convert to CSV format
+      const fields = [
+        'id',
+        'firstName',
+        'lastName',
+        'email',
+        'phoneNumber',
+        'dateOfBirth',
+        'isGuest',
+        'isVerified',
+        'totalSpent',
+        'averageSpent',
+        'visitsCount',
+        'voucherClaimsCount',
+        'joinedDate'
+      ];
+      
+      const csv = customers.map(customer => ({
+        id: customer.id,
+        firstName: customer.basicInfo.firstName,
+        lastName: customer.basicInfo.lastName,
+        email: customer.basicInfo.email,
+        phoneNumber: customer.basicInfo.phoneNumber,
+        dateOfBirth: customer.basicInfo.dateOfBirth,
+        isGuest: customer.basicInfo.isGuest,
+        isVerified: customer.basicInfo.isVerified,
+        totalSpent: customer.metrics.totalSpent,
+        averageSpent: customer.metrics.averageSpent,
+        visitsCount: customer.metrics.visitsCount,
+        voucherClaimsCount: customer.metrics.voucherClaimsCount,
+        joinedDate: customer.joinedDate
+      }));
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=customers.csv');
+      
+      // Convert to CSV string
+      const csvString = [
+        fields.join(','),
+        ...csv.map(row => fields.map(field => JSON.stringify(row[field])).join(','))
+      ].join('\n');
+
+      return res.send(csvString);
+    }
+
+    // Return JSON response
+    res.json({
+      success: true,
+      data: {
+        customers,
+        pagination: {
+          total,
+          page: parseInt(page),
+          pages: Math.ceil(total / limit),
+          hasMore: page < Math.ceil(total / limit)
+        },
+        filters: {
+          dateRanges: {
+            birthDate: { start: birthDateStart, end: birthDateEnd },
+            joinDate: { start: joinDateStart, end: joinDateEnd },
+            lastActive: { start: lastActiveStart, end: lastActiveEnd }
+          },
+          status: { verificationStatus, activeStatus, isGuest },
+          amounts: {
+            spent: { min: spentAmountMin, max: spentAmountMax },
+            average: { min: averageSpentMin, max: averageSpentMax }
+          },
+          source: { sourceType, campaignId, influencerName, influencerPlatform },
+          consent: { status: consentStatus },
+          search: { term: search, fields: searchFields },
+          sort: { by: sortBy, order: sortOrder }
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get all customers error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch customers! 😢',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   getBusinessProfile,
   updateBusinessProfile,
@@ -1757,5 +2166,6 @@ module.exports = {
   getInfluencersList,
   getBusinessById,
   updateTermsAndConditions,
-  getTermsAndConditions
+  getTermsAndConditions,
+  getAllCustomers
 }; 
