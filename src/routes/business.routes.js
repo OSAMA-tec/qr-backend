@@ -13,7 +13,9 @@ const {
   getDashboardStats,
   getTopCustomers,
   getInfluencersList,
-  getBusinessById
+  getBusinessById,
+  updateTermsAndConditions,
+  getTermsAndConditions
 } = require('../controllers/business.controller');
 
 const {
@@ -35,7 +37,7 @@ const isAdmin = (req, res, next) => {
   next();
 };
 router.post('/business-details', getBusinessById);
-
+router.get('/terms-conditions/:businessId', getTermsAndConditions);
 // Apply auth middleware to all routes 🔒
 router.use(authMiddleware);
 
@@ -50,6 +52,10 @@ router.get(
 // Business profile routes 🏢
 router.get('/business-profile', getBusinessProfile);
 router.put('/business-profile', businessProfileValidation, updateBusinessProfile);
+
+// Terms and Conditions routes 📄
+router.put('/terms-conditions', updateTermsAndConditions);
+router.get('/terms-conditions', getTermsAndConditions);
 
 // Customer management routes 👥
 router.get('/customers', listCustomers);

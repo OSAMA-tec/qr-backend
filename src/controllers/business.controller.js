@@ -1653,6 +1653,95 @@ const getBusinessById = async (req, res) => {
   }
 };
 
+// Update terms and conditions 📄
+const updateTermsAndConditions = async (req, res) => {
+  try {
+    const businessId = req.user.userId;
+    const { text } = req.body;
+
+    // Validate text
+    if (!text || text.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Terms and conditions text is required! 📝'
+      });
+    }
+
+    // Update terms and conditions
+    const business = await User.findOneAndUpdate(
+      { _id: businessId, role: 'business' },
+      {
+        $set: {
+          'businessProfile.termsAndConditions': {
+            text: text.trim(),
+            lastUpdated: new Date()
+          }
+        }
+      },
+      { new: true }
+    ).select('businessProfile.termsAndConditions');
+
+    if (!business) {
+      return res.status(404).json({
+        success: false,
+        message: 'Business not found! 🔍'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Terms and conditions updated successfully! 🎉',
+      data: {
+        termsAndConditions: business.businessProfile.termsAndConditions
+      }
+    });
+
+  } catch (error) {
+    console.error('Update terms and conditions error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update terms and conditions! 😢',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+// Get terms and conditions 📋
+const getTermsAndConditions = async (req, res) => {
+  try {
+    const businessId = req.params.businessId || req.user.userId;
+
+    const business = await User.findOne(
+      { _id: businessId, role: 'business' }
+    ).select('businessProfile.termsAndConditions');
+
+    if (!business) {
+      return res.status(404).json({
+        success: false,
+        message: 'Business not found! 🔍'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        termsAndConditions: business.businessProfile.termsAndConditions || {
+          text: '',
+          lastUpdated: null
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get terms and conditions error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch terms and conditions! 😢',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   getBusinessProfile,
   updateBusinessProfile,
@@ -1666,5 +1755,7 @@ module.exports = {
   getDashboardStats,
   getTopCustomers,
   getInfluencersList,
-  getBusinessById
+  getBusinessById,
+  updateTermsAndConditions,
+  getTermsAndConditions
 }; 

@@ -78,6 +78,17 @@ const userSchema = new mongoose.Schema({
         lng: Number
       }
     },
+    // Terms and Conditions 📄
+    termsAndConditions: {
+      text: {
+        type: String,
+        trim: true
+      },
+      lastUpdated: {
+        type: Date,
+        default: Date.now
+      }
+    },
     widgetSettings: {
       position: String,
       timing: String,
