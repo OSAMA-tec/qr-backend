@@ -460,6 +460,14 @@ const validateVoucher = async (req, res) => {
   }
 };
 
+// Helper function to generate unique reference number 🔢
+const generateReferenceNumber = () => {
+  // Format: VCH-TIMESTAMP-RANDOM
+  const timestamp = Date.now().toString(36).toUpperCase();
+  const random = Math.random().toString(36).substring(2, 8).toUpperCase();
+  return `VCH-${timestamp}-${random}`;
+};
+
 // Redeem voucher 💫
 const redeemVoucher = async (req, res) => {
   try {
@@ -470,9 +478,7 @@ const redeemVoucher = async (req, res) => {
     const voucher = await Coupon.findOne({
       _id: voucherId,
       businessId,
-      isActive: true,
-      // startDate: { $lte: new Date() },
-      // endDate: { $gte: new Date() }
+      isActive: true
     });
 
     if (!voucher) {
@@ -554,7 +560,7 @@ const redeemVoucher = async (req, res) => {
       discountAmount = Math.min(voucher.discountValue, amount);
     }
 
-    // Create transaction record 📝
+    // Create transaction record with reference number 📝
     const transaction = new Transaction({
       userId: customerId,
       businessId,
@@ -563,7 +569,8 @@ const redeemVoucher = async (req, res) => {
       discountAmount,
       location,
       status: 'completed',
-      redeemedAt: new Date()
+      redeemedAt: new Date(),
+      referenceNumber: generateReferenceNumber() // Add unique reference number
     });
 
     await transaction.save();
@@ -617,7 +624,8 @@ const redeemVoucher = async (req, res) => {
           amount,
           discountAmount,
           finalAmount: amount - discountAmount,
-          redeemedAt: transaction.redeemedAt
+          redeemedAt: transaction.redeemedAt,
+          referenceNumber: transaction.referenceNumber
         },
         voucher: {
           id: voucher._id,
@@ -640,6 +648,34 @@ const redeemVoucher = async (req, res) => {
 
   } catch (error) {
     console.error('Redeem voucher error:', error);
+    
+    // Handle specific error cases
+    if (error.code === 11000) {
+      // In the rare case of a duplicate reference number, retry once
+      try {
+        const newReferenceNumber = generateReferenceNumber();
+        error.transaction.referenceNumber = newReferenceNumber;
+        await error.transaction.save();
+        
+        return res.json({
+          success: true,
+          message: 'Voucher redeemed successfully! 🎉',
+          data: {
+            transaction: {
+              id: error.transaction._id,
+              amount: error.transaction.amount,
+              discountAmount: error.transaction.discountAmount,
+              finalAmount: error.transaction.amount - error.transaction.discountAmount,
+              redeemedAt: error.transaction.redeemedAt,
+              referenceNumber: newReferenceNumber
+            }
+          }
+        });
+      } catch (retryError) {
+        console.error('Retry redeem voucher error:', retryError);
+      }
+    }
+    
     res.status(500).json({
       success: false,
       message: 'Failed to redeem voucher! 😢'
