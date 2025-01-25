@@ -1310,24 +1310,42 @@ const getDashboardStats = async (req, res) => {
   }
 };
 
-// Get top customers based on voucher claims 🏆
+// Get top customers based on different filters 🏆
 const getTopCustomers = async (req, res) => {
   try {
     const businessId = req.user.userId;
     const businessObjectId = new mongoose.Types.ObjectId(businessId);
 
-    // Get top 5 customers with most voucher claims 📊
-    const topCustomers = await User.aggregate([
-      // Match users who have claimed vouchers from this business
-      {
-        $match: {
-          "voucherClaims.businessId": businessObjectId
-        }
-      },
+    // Get filter parameters from query 🎯
+    const {
+      filterBy = 'totalClaims', // Default filter
+      limit = 5,
+      startDate,
+      endDate,
+      status, // 'claimed' or 'redeemed'
+      minAmount = 0,
+      minClaims = 0,
+      minRedemptions = 0
+    } = req.query;
+
+    // Base match stage for all queries 🔍
+    const baseMatch = {
+      "voucherClaims.businessId": businessObjectId
+    };
+
+    // Add date range filter if provided 📅
+    if (startDate || endDate) {
+      baseMatch["voucherClaims.claimDate"] = {};
+      if (startDate) baseMatch["voucherClaims.claimDate"].$gte = new Date(startDate);
+      if (endDate) baseMatch["voucherClaims.claimDate"].$lte = new Date(endDate);
+    }
+
+    // Build aggregation pipeline based on filter type 📊
+    const pipeline = [
+      { $match: baseMatch },
       // Add fields for analytics
       {
         $addFields: {
-          // Filter voucher claims for this business
           businessClaims: {
             $filter: {
               input: "$voucherClaims",
@@ -1361,18 +1379,7 @@ const getTopCustomers = async (req, res) => {
           }
         }
       },
-      // Sort by total claims descending
-      {
-        $sort: {
-          totalClaims: -1,
-          redeemedClaims: -1
-        }
-      },
-      // Limit to top 5
-      {
-        $limit: 5
-      },
-      // Lookup transaction details
+      // Lookup transactions
       {
         $lookup: {
           from: "transactions",
@@ -1392,54 +1399,89 @@ const getTopCustomers = async (req, res) => {
           as: "transactions"
         }
       },
-      // Project final fields
+      // Add transaction metrics
       {
-        $project: {
-          _id: 1,
-          firstName: 1,
-          lastName: 1,
-          email: 1,
-          phoneNumber: 1,
-          dateOfBirth: 1,
-          isGuest: 1,
-          metrics: {
-            totalClaims: 1,
-            activeClaims: 1,
-            redeemedClaims: 1,
-            totalSpent: { $sum: "$transactions.amount" },
-            avgOrderValue: { 
-              $cond: [
-                { $gt: [{ $size: "$transactions" }, 0] },
-                { $divide: [{ $sum: "$transactions.amount" }, { $size: "$transactions" }] },
-                0
-              ]
-            },
-            lastClaimDate: { 
-              $max: "$businessClaims.claimDate"
-            },
-            lastTransactionDate: {
-              $max: "$transactions.createdAt"
-            }
+        $addFields: {
+          totalSpent: { $sum: "$transactions.amount" },
+          totalTransactions: { $size: "$transactions" },
+          avgTransactionValue: {
+            $cond: [
+              { $gt: [{ $size: "$transactions" }, 0] },
+              { $divide: [{ $sum: "$transactions.amount" }, { $size: "$transactions" }] },
+              0
+            ]
           },
-          source: {
-            type: "$guestDetails.source.type",
-            campaign: {
-              $cond: [
-                { $eq: ["$guestDetails.source.type", "campaign"] },
-                {
-                  name: "$guestDetails.source.campaignName",
-                  influencer: "$guestDetails.source.influencerName"
-                },
-                null
-              ]
-            }
-          }
+          lastTransaction: { $max: "$transactions.createdAt" }
         }
       }
-    ]);
+    ];
 
-    // Process and format the response
-    const formattedCustomers = topCustomers.map((customer, index) => ({
+    // Add filter-specific match stages 🎯
+    if (status) {
+      pipeline.push({
+        $match: {
+          [`${status}Claims`]: { $gt: 0 }
+        }
+      });
+    }
+
+    if (minAmount > 0) {
+      pipeline.push({
+        $match: {
+          totalSpent: { $gte: parseFloat(minAmount) }
+        }
+      });
+    }
+
+    if (minClaims > 0) {
+      pipeline.push({
+        $match: {
+          totalClaims: { $gte: parseInt(minClaims) }
+        }
+      });
+    }
+
+    if (minRedemptions > 0) {
+      pipeline.push({
+        $match: {
+          redeemedClaims: { $gte: parseInt(minRedemptions) }
+        }
+      });
+    }
+
+    // Add sorting based on filter type 📋
+    const sortStage = {};
+    switch (filterBy) {
+      case 'totalSpent':
+        sortStage.$sort = { totalSpent: -1 };
+        break;
+      case 'avgTransactionValue':
+        sortStage.$sort = { avgTransactionValue: -1 };
+        break;
+      case 'totalTransactions':
+        sortStage.$sort = { totalTransactions: -1 };
+        break;
+      case 'redeemedClaims':
+        sortStage.$sort = { redeemedClaims: -1 };
+        break;
+      case 'activeClaims':
+        sortStage.$sort = { activeClaims: -1 };
+        break;
+      case 'totalClaims':
+      default:
+        sortStage.$sort = { totalClaims: -1 };
+    }
+
+    pipeline.push(sortStage);
+
+    // Limit results
+    pipeline.push({ $limit: parseInt(limit) });
+
+    // Execute aggregation
+    const customers = await User.aggregate(pipeline);
+
+    // Process and format the response 🔄
+    const formattedCustomers = customers.map((customer, index) => ({
       rank: index + 1,
       id: customer._id,
       basicInfo: {
@@ -1448,32 +1490,61 @@ const getTopCustomers = async (req, res) => {
         email: customer.email,
         phoneNumber: customer.phoneNumber || null,
         dateOfBirth: customer.dateOfBirth || null,
-        isGuest: customer.isGuest || false
+        isGuest: customer.isGuest || false,
+        joinedDate: customer.createdAt
       },
-      metrics: {
-        totalClaims: customer.metrics.totalClaims,
-        activeClaims: customer.metrics.activeClaims,
-        redeemedClaims: customer.metrics.redeemedClaims,
-        totalSpent: customer.metrics.totalSpent || 0,
-        avgOrderValue: Number(customer.metrics.avgOrderValue?.toFixed(2)) || 0,
-        lastClaimDate: customer.metrics.lastClaimDate,
-        lastTransactionDate: customer.metrics.lastTransactionDate
+      voucherMetrics: {
+        totalClaims: customer.totalClaims,
+        activeClaims: customer.activeClaims,
+        redeemedClaims: customer.redeemedClaims,
+        claimToRedeemRate: customer.totalClaims ? 
+          ((customer.redeemedClaims / customer.totalClaims) * 100).toFixed(2) + '%' : 
+          '0%'
       },
-      source: customer.source.type ? {
-        type: customer.source.type,
-        details: customer.source.campaign
+      transactionMetrics: {
+        totalSpent: customer.totalSpent || 0,
+        totalTransactions: customer.totalTransactions || 0,
+        avgTransactionValue: Number(customer.avgTransactionValue?.toFixed(2)) || 0,
+        lastTransaction: customer.lastTransaction
+      },
+      source: customer.guestDetails?.source ? {
+        type: customer.guestDetails.source.type,
+        campaign: customer.guestDetails.source.campaignName,
+        influencer: customer.guestDetails.source.influencerName,
+        platform: customer.guestDetails.source.influencerPlatform
       } : null
     }));
+
+    // Calculate summary statistics 📊
+    const summary = {
+      totalCustomers: formattedCustomers.length,
+      metrics: {
+        totalClaims: formattedCustomers.reduce((sum, c) => sum + c.voucherMetrics.totalClaims, 0),
+        totalRedemptions: formattedCustomers.reduce((sum, c) => sum + c.voucherMetrics.redeemedClaims, 0),
+        totalRevenue: formattedCustomers.reduce((sum, c) => sum + c.transactionMetrics.totalSpent, 0),
+        avgClaimsPerCustomer: Number((formattedCustomers.reduce((sum, c) => sum + c.voucherMetrics.totalClaims, 0) / formattedCustomers.length).toFixed(2)),
+        avgRedemptionsPerCustomer: Number((formattedCustomers.reduce((sum, c) => sum + c.voucherMetrics.redeemedClaims, 0) / formattedCustomers.length).toFixed(2))
+      },
+      filters: {
+        type: filterBy,
+        dateRange: {
+          start: startDate || null,
+          end: endDate || null
+        },
+        status: status || null,
+        minimums: {
+          amount: minAmount,
+          claims: minClaims,
+          redemptions: minRedemptions
+        }
+      }
+    };
 
     res.json({
       success: true,
       data: {
         customers: formattedCustomers,
-        summary: {
-          totalClaims: formattedCustomers.reduce((sum, c) => sum + c.metrics.totalClaims, 0),
-          totalSpent: formattedCustomers.reduce((sum, c) => sum + c.metrics.totalSpent, 0),
-          avgClaimsPerCustomer: Number((formattedCustomers.reduce((sum, c) => sum + c.metrics.totalClaims, 0) / formattedCustomers.length).toFixed(2))
-        }
+        summary
       }
     });
 
