@@ -1160,6 +1160,31 @@ const getDashboardStats = async (req, res) => {
       }
     ]);
 
+    // Get monthly QR code scans trends 📊
+    const monthlyQRScans = await Coupon.aggregate([
+      {
+        $match: { 
+          businessId: businessObjectId,
+          "analytics.qrScanHistory": { $exists: true }
+        }
+      },
+      {
+        $unwind: "$analytics.qrScanHistory"
+      },
+      {
+        $group: {
+          _id: {
+            month: { $month: "$analytics.qrScanHistory.date" },
+            year: { $year: "$analytics.qrScanHistory.date" }
+          },
+          scans: { $sum: 1 }
+        }
+      },
+      {
+        $sort: { "_id.year": 1, "_id.month": 1 }
+      }
+    ]);
+
     // Get monthly revenue trends 📈
     const monthlyRevenue = await Coupon.aggregate([
       {
@@ -1177,8 +1202,7 @@ const getDashboardStats = async (req, res) => {
             month: { $month: "$analytics.redemptionHistory.date" },
             year: { $year: "$analytics.redemptionHistory.date" }
           },
-          revenue: { $sum: "$analytics.redemptionHistory.amount" },
-          sales: { $sum: 1 }
+          revenue: { $sum: "$analytics.redemptionHistory.amount" }
         }
       },
       {
@@ -1244,15 +1268,20 @@ const getDashboardStats = async (req, res) => {
 
     // Process monthly trends data 📊
     const monthlyTrends = last12Months.map(month => {
-      const monthData = monthlyRevenue.find(m => 
+      const revenueData = monthlyRevenue.find(m => 
         m._id.month === month.month + 1 && 
         m._id.year === month.year
-      ) || { revenue: 0, sales: 0 };
+      ) || { revenue: 0 };
+
+      const qrData = monthlyQRScans.find(m =>
+        m._id.month === month.month + 1 &&
+        m._id.year === month.year
+      ) || { scans: 0 };
 
       return {
         month: month.monthYear,
-        revenue: monthData.revenue || 0,
-        sales: monthData.sales || 0
+        revenue: revenueData.revenue || 0,
+        qrScans: qrData.scans || 0
       };
     });
 
@@ -1288,9 +1317,9 @@ const getDashboardStats = async (req, res) => {
       },
       monthlyStats: {
         revenue: monthlyTrends,
-        sales: monthlyTrends.map(m => ({
+        qrScans: monthlyTrends.map(m => ({
           month: m.month,
-          count: m.sales
+          count: m.qrScans
         }))
       }
     };
