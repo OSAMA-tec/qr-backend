@@ -2,9 +2,11 @@
 const User = require('../models/user.model');
 const Coupon = require('../models/coupon.model');
 const WidgetTemplate = require('../models/widgetTemplate.model');
+const BusinessAnalytics = require('../models/businessAnalytics.model');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const QRCode = require('qrcode');
+const { detectDevice, parseUserAgent } = require('../utils/device.utils');
 
 // Get voucher details 🎫
 const getVoucherPopup = async (req, res) => {
@@ -83,9 +85,12 @@ const registerAndClaimVoucher = async (req, res) => {
   try {
     const { businessId } = req.params;
     const { firstName, lastName, email, phoneNumber, dateOfBirth, gender } = req.body;
-    const password="12345"
+    const password = "12345";
+    const userAgent = req.headers['user-agent'];
+
     // Check if user exists
     let user = await User.findOne({ email });
+    const isNewUser = !user;
     
     if (user) {
       return res.status(400).json({
@@ -99,8 +104,6 @@ const registerAndClaimVoucher = async (req, res) => {
       businessId,
       isActive: true,
       usedTrue: true,
-      // startDate: { $lte: new Date() },
-      // endDate: { $gte: new Date() }
     });
 
     if (!voucher) {
@@ -125,7 +128,6 @@ const registerAndClaimVoucher = async (req, res) => {
         claimedFrom: 'popup',
         businessId: voucher.businessId
       },
-      // Add voucher claim details 🎫
       voucherClaims: [{
         voucherId: voucher._id,
         businessId: voucher.businessId,
@@ -143,7 +145,7 @@ const registerAndClaimVoucher = async (req, res) => {
     
     await user.save();
 
-    // Increment clicks counter
+    // Update voucher analytics
     await Coupon.updateOne(
       { _id: voucher._id },
       { 
@@ -153,6 +155,31 @@ const registerAndClaimVoucher = async (req, res) => {
         }
       }
     );
+
+    // Update business analytics 📈
+    let businessAnalytics = await BusinessAnalytics.findOne({ businessId });
+    
+    // Create analytics record if it doesn't exist
+    if (!businessAnalytics) {
+      businessAnalytics = new BusinessAnalytics({ businessId });
+    }
+
+    // Track new customer and source
+    if (isNewUser) {
+      await businessAnalytics.trackNewCustomer(true);
+      await businessAnalytics.trackSource('popup');
+    }
+
+    // Track device info
+    const deviceInfo = detectDevice(userAgent);
+    await businessAnalytics.trackDevice(deviceInfo.type);
+
+    // Track browser info
+    const browserInfo = parseUserAgent(userAgent);
+    await businessAnalytics.trackBrowser(browserInfo.browser);
+
+    // Save analytics
+    await businessAnalytics.save();
 
     // Generate claim ID
     const claimId = crypto.randomBytes(16).toString('hex');
@@ -227,7 +254,7 @@ const getClaimedVoucher = async (req, res) => {
     const { claimId } = req.params;
     const { userId, voucherId } = req.query;
 
-    // Get user and voucher details with more data 📝
+    // Get user and voucher details
     const [user, voucher] = await Promise.all([
       User.findById(userId),
       Coupon.findOne({
@@ -245,14 +272,14 @@ const getClaimedVoucher = async (req, res) => {
 
     // Create rich QR data object 🔐
     const qrData = {
-      claimId,                    // Unique claim identifier
-      voucherId: voucher._id,     // Voucher ID
-      code: voucher.code,         // Voucher code
-      businessId: voucher.businessId._id, // Business ID
-      userId: user._id,           // User ID
-      type: 'claimed_voucher',    // Type identifier
-      timestamp: new Date(),      // Claim timestamp
-      expiryDate: voucher.endDate // Expiry date
+      claimId,
+      voucherId: voucher._id,
+      code: voucher.code,
+      businessId: voucher.businessId._id,
+      userId: user._id,
+      type: 'claimed_voucher',
+      timestamp: new Date(),
+      expiryDate: voucher.endDate
     };
 
     // Generate secure hash for verification 🔒
@@ -286,6 +313,14 @@ const getClaimedVoucher = async (req, res) => {
         }
       }
     );
+
+    // Update business analytics 📈
+    let businessAnalytics = await BusinessAnalytics.findOne({ businessId: voucher.businessId._id });
+    
+    if (businessAnalytics) {
+      await businessAnalytics.trackQRScan();
+      await businessAnalytics.save();
+    }
 
     // Update user's voucher claim status
     await User.updateOne(

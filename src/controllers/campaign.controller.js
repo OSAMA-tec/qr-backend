@@ -8,6 +8,7 @@ const { getLocationFromIP } = require('../utils/location.utils');
 const Coupon = require('../models/coupon.model');
 const mongoose = require('mongoose');
 const QRCode = require('qrcode');
+const BusinessAnalytics = require('../models/businessAnalytics.model');
 
 // Helper: Generate unique referral code 🎫
 const generateReferralCode = (campaignId, influencerName) => {
@@ -310,8 +311,7 @@ const submitCampaignForm = async (req, res) => {
     const campaign = await Campaign.findOne({
       _id: campaignId,
       'influencers.referralCode': referralCode,
-      // status: 'active'
-    }).populate('voucherId'); // 🎫 Populate voucher details
+    }).populate('voucherId');
 
     if (!campaign) {
       return res.status(404).json({
@@ -350,6 +350,8 @@ const submitCampaignForm = async (req, res) => {
 
     // Create or update user with campaign source info 👤
     let user = await User.findOne({ email: formData.email });
+    const isNewUser = !user;
+
     if (!user) {
       user = new User({
         email: formData.email,
@@ -359,7 +361,6 @@ const submitCampaignForm = async (req, res) => {
         dateOfBirth: formData.dateOfBirth,
         role: 'customer',
         isGuest: true,
-        // Add campaign source tracking 🎯
         guestDetails: {
           description: `Joined via ${campaign.name} campaign`,
           claimedFrom: 'campaign',
@@ -375,7 +376,6 @@ const submitCampaignForm = async (req, res) => {
             joinedAt: new Date()
           }
         },
-        // Add voucher claim details 🎫
         voucherClaims: [{
           voucherId: campaign.voucherId._id,
           businessId: campaign.businessId,
@@ -463,26 +463,43 @@ const submitCampaignForm = async (req, res) => {
     // Update campaign analytics 📊
     campaign.analytics.formSubmissions = (campaign.analytics.formSubmissions || 0) + 1;
     campaign.analytics.totalConversions = (campaign.analytics.totalConversions || 0) + 1;
-    
-    // Calculate conversion rate
     campaign.analytics.conversionRate = 
       (campaign.analytics.totalConversions / campaign.analytics.totalClicks) * 100;
 
     await campaign.save();
+
+    // Update business analytics 📈
+    let businessAnalytics = await BusinessAnalytics.findOne({ businessId: campaign.businessId });
+    
+    // Create analytics record if it doesn't exist
+    if (!businessAnalytics) {
+      businessAnalytics = new BusinessAnalytics({ businessId: campaign.businessId });
+    }
+
+    // Track new customer and analytics
+    if (isNewUser) {
+      await businessAnalytics.trackNewCustomer(true);
+    }
+    await businessAnalytics.trackSource('campaign');
+    await businessAnalytics.trackDevice(deviceInfo.type);
+    await businessAnalytics.trackBrowser(browserInfo.browser);
+
+    // Save analytics
+    await businessAnalytics.save();
 
     // Generate claim ID 🎫
     const claimId = crypto.randomBytes(16).toString('hex');
 
     // Create rich QR data object 🔐
     const qrData = {
-      claimId,                    // Unique claim identifier
-      voucherId: campaign.voucherId._id,     // Voucher ID
-      code: campaign.voucherId.code,         // Voucher code
-      businessId: campaign.businessId,       // Business ID
-      userId: user._id,           // User ID
-      type: 'claimed_voucher',    // Type identifier
-      timestamp: new Date(),      // Claim timestamp
-      expiryDate: campaign.voucherId.endDate // Expiry date
+      claimId,
+      voucherId: campaign.voucherId._id,
+      code: campaign.voucherId.code,
+      businessId: campaign.businessId,
+      userId: user._id,
+      type: 'claimed_voucher',
+      timestamp: new Date(),
+      expiryDate: campaign.voucherId.endDate
     };
 
     // Generate secure hash for verification 🔒
@@ -516,6 +533,10 @@ const submitCampaignForm = async (req, res) => {
         }
       }
     );
+
+    // Track QR code generation in business analytics
+    await businessAnalytics.trackQRScan();
+    await businessAnalytics.save();
 
     // Update user's voucher claim status
     await User.updateOne(
@@ -559,7 +580,7 @@ const submitCampaignForm = async (req, res) => {
           usageLimit: campaign.voucherId.usageLimit,
           currentUsage: campaign.voucherId.currentUsage,
           qrCode,
-          hash  // Include hash for verification
+          hash
         },
         claim: {
           id: claimId,

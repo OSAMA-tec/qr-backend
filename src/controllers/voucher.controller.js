@@ -5,6 +5,7 @@ const Transaction = require('../models/transaction.model');
 const WidgetTemplate = require('../models/widgetTemplate.model');
 const QRCode = require('qrcode');
 const crypto = require('crypto');
+const BusinessAnalytics = require('../models/businessAnalytics.model');
 
 // Create new voucher template 🎟️
 const createVoucher = async (req, res) => {
@@ -570,7 +571,7 @@ const redeemVoucher = async (req, res) => {
       location,
       status: 'completed',
       redeemedAt: new Date(),
-      referenceNumber: generateReferenceNumber() // Add unique reference number
+      referenceNumber: generateReferenceNumber()
     });
 
     await transaction.save();
@@ -606,6 +607,23 @@ const redeemVoucher = async (req, res) => {
         }
       }
     );
+
+    // Update business analytics 📈
+    let businessAnalytics = await BusinessAnalytics.findOne({ businessId });
+    
+    // Create analytics record if it doesn't exist
+    if (!businessAnalytics) {
+      businessAnalytics = new BusinessAnalytics({ businessId });
+    }
+
+    // Track redemption and revenue
+    await Promise.all([
+      businessAnalytics.trackRedemption(),
+      businessAnalytics.trackRevenue(amount)
+    ]);
+
+    // Save analytics
+    await businessAnalytics.save();
 
     // Check if voucher has reached usage limit 🎯
     if (voucher.usageLimit?.perCoupon && voucher.currentUsage + 1 >= voucher.usageLimit.perCoupon) {
