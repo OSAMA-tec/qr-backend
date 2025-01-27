@@ -10,6 +10,7 @@ require('dotenv').config();
 
 // Import routes and middleware 🛣️
 const authRoutes = require('./routes/auth.routes');
+const adminRoutes = require('./routes/admin.routes');
 const businessRoutes = require('./routes/business.routes');
 const popupRoutes = require('./routes/popup.routes');
 const userRoutes = require('./routes/user.routes');
@@ -111,6 +112,7 @@ app.use('/api/widget', widgetRoutes);
 app.use('/api/vouchers', voucherRoutes);
 app.use('/api/qr-codes', qrCodeRoutes);
 app.use('/api/campaigns', campaignRoutes);
+app.use('/api/admin', adminRoutes);
 
 // Health check route 🏥
 app.get('/', (req, res) => {
