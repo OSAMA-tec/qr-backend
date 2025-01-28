@@ -7,7 +7,6 @@ const subscriptionPlanSchema = new mongoose.Schema({
   name: {
     type: String,
     required: true,
-    enum: ['free', 'basic', 'premium', 'enterprise']
   },
   description: String,
   
@@ -21,7 +20,6 @@ const subscriptionPlanSchema = new mongoose.Schema({
   },
   billingCycle: {
     type: String,
-    enum: ['monthly', 'yearly'],
     required: true
   },
 
@@ -55,30 +53,24 @@ const subscriptionSchema = new mongoose.Schema({
   businessId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
   },
 
   // Stripe Info
   stripeCustomerId: {
     type: String,
-    required: true
   },
   stripeSubscriptionId: {
     type: String,
-    required: true
   },
 
   // Plan Info
   plan: {
     type: String,
-    enum: ['free', 'basic', 'premium', 'enterprise'],
-    required: true
   },
 
   // Status
   status: {
     type: String,
-    enum: ['active', 'past_due', 'canceled', 'incomplete', 'incomplete_expired', 'trialing', 'unpaid'],
     default: 'active'
   },
 
@@ -86,8 +78,6 @@ const subscriptionSchema = new mongoose.Schema({
   billing: {
     cycle: {
       type: String,
-      enum: ['monthly', 'yearly'],
-      required: true
     },
     currentPeriodStart: Date,
     currentPeriodEnd: Date,
@@ -104,7 +94,6 @@ const subscriptionSchema = new mongoose.Schema({
     date: Date,
     status: {
       type: String,
-      enum: ['succeeded', 'failed', 'pending']
     },
     invoiceUrl: String
   }],

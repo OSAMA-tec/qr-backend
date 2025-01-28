@@ -18,6 +18,7 @@ const widgetRoutes = require('./routes/widget.routes');
 const voucherRoutes = require('./routes/voucher.routes');
 const qrCodeRoutes = require('./routes/qrCode.routes');
 const campaignRoutes = require('./routes/campaign.routes');
+const subscriptionRoutes = require('./routes/subscription.routes');
 const { cookieParser, handleCSRFError } = require('./middleware/csrf.middleware');
 
 // Initialize express app 🚀
@@ -113,6 +114,7 @@ app.use('/api/vouchers', voucherRoutes);
 app.use('/api/qr-codes', qrCodeRoutes);
 app.use('/api/campaigns', campaignRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/subscriptions', subscriptionRoutes);
 
 // Health check route 🏥
 app.get('/', (req, res) => {
