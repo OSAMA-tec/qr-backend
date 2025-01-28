@@ -67,6 +67,14 @@ const subscriptionSchema = new mongoose.Schema({
   plan: {
     type: String,
   },
+  customAmount: {
+    amount: Number,
+    reason: String,
+    appliedDate: {
+      type: Date,
+      default: Date.now
+    }
+  },
 
   // Status
   status: {

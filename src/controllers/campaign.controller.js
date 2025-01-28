@@ -1182,6 +1182,201 @@ const getCampaignAnswers = async (req, res) => {
   }
 };
 
+// Update campaign details 🔄
+const updateCampaign = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
+  try {
+    const { campaignId } = req.params;
+    const businessId = req.user.userId;
+    const updateData = req.body;
+
+    // find campaign and check ownership
+    const campaign = await Campaign.findOne({ 
+      _id: campaignId,
+      businessId 
+    });
+
+    if (!campaign) {
+      return res.status(404).json({
+        success: false,
+        message: 'Campaign not found or unauthorized! 🚫'
+      });
+    }
+
+    // validate dates if updating
+    if (updateData.startDate || updateData.endDate) {
+      const startDate = new Date(updateData.startDate || campaign.startDate);
+      const endDate = new Date(updateData.endDate || campaign.endDate);
+      
+      if (startDate >= endDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'End date must be after start date! ⚠️'
+        });
+      }
+    }
+
+    // validate voucher if updating
+    if (updateData.voucherId) {
+      if (!mongoose.Types.ObjectId.isValid(updateData.voucherId)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid voucher ID format! 🚫'
+        });
+      }
+
+      const voucher = await Coupon.findOne({
+        _id: updateData.voucherId,
+        businessId
+      });
+
+      if (!voucher) {
+        return res.status(404).json({
+          success: false,
+          message: 'Voucher not found or unauthorized! 🎫'
+        });
+      }
+    }
+
+    // handle influencer updates
+    if (updateData.influencers) {
+      // keep existing stats for existing influencers
+      const updatedInfluencers = updateData.influencers.map(newInf => {
+        const existingInf = campaign.influencers.find(
+          inf => inf.name === newInf.name && inf.platform === newInf.platform
+        );
+
+        if (existingInf) {
+          return {
+            ...newInf,
+            referralCode: existingInf.referralCode,
+            stats: existingInf.stats
+          };
+        }
+
+        // generate new code for new influencers
+        return {
+          ...newInf,
+          referralCode: generateReferralCode(campaignId, newInf.name),
+          stats: {
+            clicks: 0,
+            conversions: 0,
+            revenue: 0
+          }
+        };
+      });
+
+      updateData.influencers = updatedInfluencers;
+    }
+
+    // handle form config updates
+    if (updateData.formConfig) {
+      updateData.formConfig.fields = updateData.formConfig.fields.map(field => ({
+        name: field.name,
+        type: field.type,
+        required: field.isRequired || false,
+        options: field.options || []
+      }));
+    }
+
+    // handle budget updates
+    if (updateData.budget) {
+      updateData.budget = {
+        ...campaign.budget,
+        ...updateData.budget,
+        remaining: updateData.budget.total - (campaign.budget?.spent || 0)
+      };
+    }
+
+    // update campaign status based on dates
+    const now = new Date();
+    if (updateData.startDate || updateData.endDate) {
+      const startDate = new Date(updateData.startDate || campaign.startDate);
+      const endDate = new Date(updateData.endDate || campaign.endDate);
+
+      if (now < startDate) {
+        updateData.status = 'scheduled';
+      } else if (now > endDate) {
+        updateData.status = 'completed';
+      } else if (campaign.status !== 'paused' && campaign.status !== 'cancelled') {
+        updateData.status = 'active';
+      }
+    }
+
+    // update campaign
+    const updatedCampaign = await Campaign.findOneAndUpdate(
+      { _id: campaignId, businessId },
+      { 
+        $set: {
+          ...updateData,
+          updatedAt: new Date()
+        }
+      },
+      { 
+        new: true,
+        session,
+        runValidators: true
+      }
+    ).populate([
+      {
+        path: 'voucherId',
+        select: 'code title description discountType discountValue startDate endDate'
+      }
+    ]);
+
+    await session.commitTransaction();
+
+    // prepare share URLs for response
+    const shareUrls = updatedCampaign.influencers.map(inf => ({
+      name: inf.name,
+      platform: inf.platform,
+      referralCode: inf.referralCode,
+      shareUrl: `${process.env.BASE_URL}/ref/${inf.referralCode}`
+    }));
+
+    res.json({
+      success: true,
+      message: 'Campaign updated successfully! 🎉',
+      data: {
+        campaign: updatedCampaign,
+        shareUrls,
+        changes: {
+          datesUpdated: !!(updateData.startDate || updateData.endDate),
+          voucherUpdated: !!updateData.voucherId,
+          influencersUpdated: !!updateData.influencers,
+          formUpdated: !!updateData.formConfig,
+          budgetUpdated: !!updateData.budget,
+          statusUpdated: !!updateData.status
+        }
+      }
+    });
+
+  } catch (error) {
+    await session.abortTransaction();
+    console.error('Update campaign error:', error);
+
+    // handle validation errors
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => err.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed! Please check your input. ❌',
+        errors: validationErrors
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update campaign! 😢',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  } finally {
+    session.endSession();
+  }
+};
+
 module.exports = {
   createCampaign,
   trackCampaignClick,
@@ -1191,5 +1386,6 @@ module.exports = {
   listCampaigns,
   submitCampaignAnswer,
   updateCampaignQuestion,
-  getCampaignAnswers
+  getCampaignAnswers,
+  updateCampaign
 }; 

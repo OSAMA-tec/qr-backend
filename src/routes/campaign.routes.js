@@ -8,7 +8,8 @@ const {
   getAllCampaigns,
   submitCampaignAnswer,
   updateCampaignQuestion,
-  getCampaignAnswers
+  getCampaignAnswers,
+  updateCampaign
 } = require("../controllers/campaign.controller");
 
 const authMiddleware = require("../middleware/auth.middleware");
@@ -50,6 +51,9 @@ router.use(isBusinessMiddleware);
 router.post("/", campaignValidation, createCampaign); // Create campaign
 router.get("/", getAllCampaigns); // Get all campaigns for business
 router.get("/:campaignId/analytics", getCampaignAnalytics); // Get campaign analytics
+
+// Update campaign route
+router.put("/:campaignId", updateCampaign); // Update campaign details
 
 // Question and Answer routes (for business)
 router.put("/:campaignId/question", updateCampaignQuestion); // Update campaign question

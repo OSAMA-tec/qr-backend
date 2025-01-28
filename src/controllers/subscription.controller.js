@@ -330,7 +330,13 @@ const updateSubscription = async (req, res) => {
 
   try {
     const { businessId } = req.params;
-    const { newPlanName, billingCycle } = req.body;
+    const { 
+      newPlanName, 
+      billingCycle,
+      // Custom amount fields
+      customAmount,
+      customAmountReason
+    } = req.body;
 
     // Get current subscription
     const subscription = await Subscription.findOne({ businessId });
@@ -347,36 +353,68 @@ const updateSubscription = async (req, res) => {
       throw new Error('Invalid subscription plan! 📋');
     }
 
-    // Update Stripe subscription
-    // const stripeSubscription = await stripe.subscriptions.retrieve(
-    //   subscription.stripeSubscriptionId
-    // );
-
-    // await stripe.subscriptions.update(subscription.stripeSubscriptionId, {
-    //   items: [{
-    //     id: stripeSubscription.items.data[0].id,
-    //     price: billingCycle === 'yearly' ? 
-    //       newPlan.price.yearlyPriceId : 
-    //       newPlan.price.monthlyPriceId
-    //   }],
-    //   proration_behavior: 'always_invoice'
-    // });
+    // Calculate amount to charge
+    const chargeAmount = customAmount || newPlan.price.amount;
 
     // Update local subscription
     subscription.plan = newPlanName;
     subscription.billing.cycle = billingCycle;
+
+    // Update custom amount if provided
+    if (customAmount) {
+      subscription.customAmount = {
+        amount: customAmount,
+        reason: customAmountReason || `Custom amount for ${newPlanName} plan`,
+        appliedDate: new Date()
+      };
+    } else {
+      // Reset custom amount if not provided
+      subscription.customAmount = undefined;
+    }
+
+    // Add payment record for plan change
+    subscription.paymentHistory.push({
+      amount: chargeAmount,
+      currency: newPlan.price.currency || 'USD',
+      date: new Date(),
+      status: 'succeeded',
+      invoiceUrl: null
+    });
+
     await subscription.save({ session });
 
     // Update business user
     await User.findByIdAndUpdate(businessId, {
-      'subscription.plan': newPlanName
+      'subscription.plan': newPlanName,
+      'subscription.customAmount': customAmount ? {
+        amount: customAmount,
+        reason: customAmountReason
+      } : undefined
     }, { session });
 
     await session.commitTransaction();
 
+    // Get updated subscription with populated data
+    const updatedSubscription = await Subscription.findOne({ businessId })
+      .populate({
+        path: 'businessId',
+        select: 'businessProfile.businessName email phoneNumber'
+      });
+
     res.json({
       success: true,
-      data: subscription
+      message: customAmount ? 
+        'Subscription updated with custom amount! 💰' : 
+        'Subscription updated successfully! 🎉',
+      data: {
+        subscription: updatedSubscription,
+        billing: {
+          standardAmount: newPlan.price.amount,
+          customAmount: customAmount || null,
+          effectiveAmount: chargeAmount,
+          cycle: billingCycle
+        }
+      }
     });
 
   } catch (error) {
