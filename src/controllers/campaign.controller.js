@@ -1210,12 +1210,12 @@ const updateCampaign = async (req, res) => {
       const startDate = new Date(updateData.startDate || campaign.startDate);
       const endDate = new Date(updateData.endDate || campaign.endDate);
       
-      if (startDate >= endDate) {
-        return res.status(400).json({
-          success: false,
-          message: 'End date must be after start date! ⚠️'
-        });
-      }
+      // if (startDate >= endDate) {
+      //   return res.status(400).json({
+      //     success: false,
+      //     message: 'End date must be after start date! ⚠️'
+      //   });
+      // }
     }
 
     // validate voucher if updating
