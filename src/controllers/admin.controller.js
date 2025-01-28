@@ -655,7 +655,315 @@ const getCustomerDetails = async (req, res) => {
   }
 };
 
+// Get all campaigns with detailed info 🎯
+const getAllCampaigns = async (req, res) => {
+  try {
+    const {
+      // Pagination
+      page = 1,
+      limit = 10,
+      
+      // Search filters
+      search,
+      searchFields = ["name", "description"],
+      
+      // Date filters
+      startDateFrom,
+      startDateTo,
+      endDateFrom,
+      endDateTo,
+      
+      // Status filters
+      status,
+      type,
+      businessId,
+      
+      // Sort
+      sortBy = "createdAt",
+      sortOrder = "desc"
+    } = req.query;
+
+    // Build base query 🏗️
+    const query = {};
+
+    // Add search filter 🔍
+    if (search) {
+      const searchRegex = new RegExp(search, "i");
+      query.$or = searchFields.map(field => ({ [field]: searchRegex }));
+    }
+
+    // Add date filters 📅
+    if (startDateFrom || startDateTo) {
+      query.startDate = {};
+      if (startDateFrom) query.startDate.$gte = new Date(startDateFrom);
+      if (startDateTo) query.startDate.$lte = new Date(startDateTo);
+    }
+
+    if (endDateFrom || endDateTo) {
+      query.endDate = {};
+      if (endDateFrom) query.endDate.$gte = new Date(endDateFrom);
+      if (endDateTo) query.endDate.$lte = new Date(endDateTo);
+    }
+
+    // Add status and type filters
+    if (status) query.status = status;
+    if (type) query.type = type;
+    if (businessId) query.businessId = new mongoose.Types.ObjectId(businessId);
+
+    // Calculate pagination 📄
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Build aggregation pipeline 📊
+    const pipeline = [
+      { $match: query },
+      
+      // Lookup business details
+      {
+        $lookup: {
+          from: "users",
+          localField: "businessId",
+          foreignField: "_id",
+          pipeline: [
+            {
+              $project: {
+                businessName: "$businessProfile.businessName",
+                email: 1,
+                phoneNumber: 1,
+                status: "$businessProfile.status",
+                category: "$businessProfile.category",
+                location: "$businessProfile.location"
+              }
+            }
+          ],
+          as: "businessDetails"
+        }
+      },
+      
+      // Lookup voucher details
+      {
+        $lookup: {
+          from: "coupons",
+          localField: "voucherId",
+          foreignField: "_id",
+          pipeline: [
+            {
+              $project: {
+                code: 1,
+                type: 1,
+                value: 1,
+                maxUses: 1,
+                currentUses: 1,
+                status: 1
+              }
+            }
+          ],
+          as: "voucherDetails"
+        }
+      },
+      
+      // Lookup campaign leads
+      {
+        $lookup: {
+          from: "campaignleads",
+          let: { campaignId: "$_id" },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ["$campaignId", "$$campaignId"] }
+              }
+            },
+            {
+              $group: {
+                _id: "$status",
+                count: { $sum: 1 }
+              }
+            }
+          ],
+          as: "leadStats"
+        }
+      },
+      
+      // Add computed fields
+      {
+        $addFields: {
+          businessInfo: { $arrayElemAt: ["$businessDetails", 0] },
+          voucherInfo: { $arrayElemAt: ["$voucherDetails", 0] },
+          leadMetrics: {
+            total: { 
+              $reduce: {
+                input: "$leadStats",
+                initialValue: 0,
+                in: { $add: ["$$value", "$$this.count"] }
+              }
+            },
+            pending: {
+              $reduce: {
+                input: {
+                  $filter: {
+                    input: "$leadStats",
+                    cond: { $eq: ["$$this._id", "pending"] }
+                  }
+                },
+                initialValue: 0,
+                in: { $add: ["$$value", "$$this.count"] }
+              }
+            },
+            converted: {
+              $reduce: {
+                input: {
+                  $filter: {
+                    input: "$leadStats",
+                    cond: { $eq: ["$$this._id", "converted"] }
+                  }
+                },
+                initialValue: 0,
+                in: { $add: ["$$value", "$$this.count"] }
+              }
+            }
+          },
+          daysRemaining: {
+            $ceil: {
+              $divide: [
+                { $subtract: ["$endDate", new Date()] },
+                1000 * 60 * 60 * 24
+              ]
+            }
+          },
+          isActive: {
+            $and: [
+              { $eq: ["$status", "active"] },
+              { $gte: ["$endDate", new Date()] },
+              { $lte: ["$startDate", new Date()] }
+            ]
+          }
+        }
+      },
+      
+      // Sort results
+      {
+        $sort: {
+          [sortBy]: sortOrder === "asc" ? 1 : -1
+        }
+      },
+      
+      // Pagination
+      { $skip: skip },
+      { $limit: parseInt(limit) }
+    ];
+
+    // Execute aggregation
+    const [campaigns, totalCount] = await Promise.all([
+      Campaign.aggregate(pipeline),
+      Campaign.countDocuments(query)
+    ]);
+
+    // Format response
+    const formattedCampaigns = campaigns.map(campaign => ({
+      id: campaign._id,
+      basicInfo: {
+        name: campaign.name,
+        description: campaign.description,
+        type: campaign.type,
+        status: campaign.status,
+        startDate: campaign.startDate,
+        endDate: campaign.endDate,
+        daysRemaining: campaign.daysRemaining,
+        isActive: campaign.isActive
+      },
+      business: campaign.businessInfo ? {
+        id: campaign.businessInfo._id,
+        name: campaign.businessInfo.businessName,
+        email: campaign.businessInfo.email,
+        phoneNumber: campaign.businessInfo.phoneNumber,
+        status: campaign.businessInfo.status,
+        category: campaign.businessInfo.category,
+        location: campaign.businessInfo.location
+      } : null,
+      voucher: campaign.voucherInfo ? {
+        id: campaign.voucherInfo._id,
+        code: campaign.voucherInfo.code,
+        type: campaign.voucherInfo.type,
+        value: campaign.voucherInfo.value,
+        usage: {
+          max: campaign.voucherInfo.maxUses,
+          current: campaign.voucherInfo.currentUses,
+          remaining: campaign.voucherInfo.maxUses - campaign.voucherInfo.currentUses
+        }
+      } : null,
+      metrics: {
+        analytics: campaign.analytics || {},
+        leads: campaign.leadMetrics,
+        budget: campaign.budget || {},
+        influencers: (campaign.influencers || []).map(inf => ({
+          name: inf.name,
+          type: inf.type,
+          platform: inf.platform,
+          referralCode: inf.referralCode,
+          stats: inf.stats
+        }))
+      },
+      targeting: campaign.targeting || {},
+      formConfig: campaign.formConfig || {}
+    }));
+
+    // Calculate summary statistics
+    const summary = {
+      total: totalCount,
+      filtered: campaigns.length,
+      status: {
+        active: campaigns.filter(c => c.isActive).length,
+        draft: campaigns.filter(c => c.status === 'draft').length,
+        completed: campaigns.filter(c => c.status === 'completed').length,
+        cancelled: campaigns.filter(c => c.status === 'cancelled').length
+      },
+      metrics: {
+        totalLeads: formattedCampaigns.reduce((sum, c) => sum + (c.metrics.leads.total || 0), 0),
+        totalConversions: formattedCampaigns.reduce((sum, c) => sum + (c.metrics.leads.converted || 0), 0),
+        totalRevenue: formattedCampaigns.reduce((sum, c) => sum + (c.metrics.analytics.revenue || 0), 0),
+        avgConversionRate: formattedCampaigns.length ? 
+          formattedCampaigns.reduce((sum, c) => {
+            const rate = c.metrics.leads.total ? (c.metrics.leads.converted / c.metrics.leads.total) * 100 : 0;
+            return sum + rate;
+          }, 0) / formattedCampaigns.length : 0
+      }
+    };
+
+    res.json({
+      success: true,
+      data: {
+        campaigns: formattedCampaigns,
+        summary,
+        pagination: {
+          total: totalCount,
+          page: parseInt(page),
+          pages: Math.ceil(totalCount / limit),
+          hasMore: page < Math.ceil(totalCount / limit)
+        },
+        filters: {
+          search: search || null,
+          dates: {
+            startDate: { from: startDateFrom, to: startDateTo },
+            endDate: { from: endDateFrom, to: endDateTo }
+          },
+          status: status || null,
+          type: type || null,
+          businessId: businessId || null
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error("Get all campaigns error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch campaigns! 😢",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   getAllCustomers,
-  getCustomerDetails
+  getCustomerDetails,
+  getAllCampaigns
 }; 

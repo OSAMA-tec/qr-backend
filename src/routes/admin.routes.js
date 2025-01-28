@@ -2,7 +2,8 @@
 const router = require('express').Router();
 const {
   getAllCustomers,
-  getCustomerDetails
+  getCustomerDetails,
+  getAllCampaigns
 } = require('../controllers/admin.controller');
 
 const authMiddleware = require('../middleware/auth.middleware');
@@ -26,6 +27,11 @@ router.use(isAdminMiddleware);
 // Customer management routes 👥
 router.get('/customers', getAllCustomers);
 router.get('/customers/:id', getCustomerDetails);
+
+// Campaign management routes 🎯
+router.get('/campaigns', getAllCampaigns);
+
+// Lookup routes 📚
 router.get('/lookup', getLookupData);
 
 module.exports = router; 
