@@ -183,212 +183,8 @@ const trackCampaignClick = async (req, res) => {
     const browserInfo = parseUserAgent(userAgent);
     const location = await getLocationFromIP(ipAddress);
 
-    // Initialize influencer stats if not exists
-    if (!campaign.influencers[influencerIndex].stats) {
-      campaign.influencers[influencerIndex].stats = {
-        clicks: 0,
-        conversions: 0,
-        revenue: 0
-      };
-    }
-
-    // Update influencer clicks
-    campaign.influencers[influencerIndex].stats.clicks++;
-
-    // Initialize analytics with complete structure if not exists
-    if (!campaign.analytics) {
-      campaign.analytics = {
-        totalClicks: 0,
-        uniqueClicks: 0,
-        formViews: 0,
-        formSubmissions: 0,
-        conversions: 0,
-        revenue: 0,
-        deviceStats: {
-          desktop: 0,
-          mobile: 0,
-          tablet: 0
-        },
-        browserStats: {
-          chrome: 0,
-          firefox: 0,
-          safari: 0,
-          edge: 0,
-          opera: 0,
-          other: 0
-        },
-        locationStats: {},
-        timeStats: {
-          hourly: Array(24).fill(0),
-          daily: Array(7).fill(0),
-          monthly: Array(12).fill(0)
-        }
-      };
-    }
-
-    // Ensure all required properties exist
-    campaign.analytics.totalClicks = campaign.analytics.totalClicks || 0;
-    campaign.analytics.uniqueClicks = campaign.analytics.uniqueClicks || 0;
-    campaign.analytics.formViews = campaign.analytics.formViews || 0;
-    campaign.analytics.formSubmissions = campaign.analytics.formSubmissions || 0;
-    campaign.analytics.conversions = campaign.analytics.conversions || 0;
-    campaign.analytics.revenue = campaign.analytics.revenue || 0;
-
-    // Initialize deviceStats if not exists or incomplete
-    if (!campaign.analytics.deviceStats) {
-      campaign.analytics.deviceStats = {
-        desktop: 0,
-        mobile: 0,
-        tablet: 0
-      };
-    }
-
-    // Initialize browserStats if not exists or incomplete
-    if (!campaign.analytics.browserStats) {
-      campaign.analytics.browserStats = {
-        chrome: 0,
-        firefox: 0,
-        safari: 0,
-        edge: 0,
-        opera: 0,
-        other: 0
-      };
-    }
-
-    // Initialize locationStats if not exists
-    if (!campaign.analytics.locationStats) {
-      campaign.analytics.locationStats = {};
-    }
-
-    // Initialize timeStats if not exists or incomplete
-    if (!campaign.analytics.timeStats) {
-      campaign.analytics.timeStats = {
-        hourly: Array(24).fill(0),
-        daily: Array(7).fill(0),
-        monthly: Array(12).fill(0)
-      };
-    }
-
-    // Update campaign analytics 📊
-    campaign.analytics.formSubmissions++;
-    campaign.analytics.conversions++;
-    
-    // Calculate conversion rate
-    if (campaign.analytics.totalClicks > 0) {
-      campaign.analytics.conversionRate = 
-        (campaign.analytics.conversions / campaign.analytics.totalClicks) * 100;
-    }
-
-    // Update device stats with safe increment
-    const deviceType = deviceInfo.type || 'other';
-    campaign.analytics.deviceStats[deviceType] = 
-      (campaign.analytics.deviceStats[deviceType] || 0) + 1;
-
-    // Update browser stats safely
-    try {
-      // Get browser info with fallback
-      const browserName = (browserInfo?.browser || 'other').toLowerCase();
-      const supportedBrowsers = ['chrome', 'firefox', 'safari', 'edge', 'opera'];
-      
-      // Ensure browserStats exists
-      if (typeof campaign.analytics.browserStats !== 'object') {
-        campaign.analytics.browserStats = {
-          chrome: 0,
-          firefox: 0,
-          safari: 0,
-          edge: 0,
-          opera: 0,
-          other: 0
-        };
-      }
-      
-      // Use 'other' if browser is not in supported list
-      const browserKey = supportedBrowsers.includes(browserName) ? browserName : 'other';
-      
-      // Safe increment with fallback
-      campaign.analytics.browserStats[browserKey] = 
-        (campaign.analytics.browserStats[browserKey] || 0) + 1;
-    } catch (err) {
-      console.error('Error updating browser stats:', err);
-      // If any error occurs, increment 'other'
-      campaign.analytics.browserStats.other = 
-        (campaign.analytics.browserStats.other || 0) + 1;
-    }
-
-    // Update location stats safely
-    try {
-      // Initialize locationStats if not exists
-      if (!campaign.analytics.locationStats) {
-        campaign.analytics.locationStats = {};
-      }
-
-      // Only update if location data exists and has country info
-      if (location && typeof location === 'object' && location.country) {
-        const locationKey = location.country.toLowerCase();
-        campaign.analytics.locationStats[locationKey] = 
-          (campaign.analytics.locationStats[locationKey] || 0) + 1;
-      } else {
-        // Track unknown location
-        campaign.analytics.locationStats['unknown'] = 
-          (campaign.analytics.locationStats['unknown'] || 0) + 1;
-      }
-    } catch (err) {
-      console.error('Error updating location stats:', err);
-      // If any error occurs, increment unknown
-      if (!campaign.analytics.locationStats) {
-        campaign.analytics.locationStats = {};
-      }
-      campaign.analytics.locationStats['unknown'] = 
-        (campaign.analytics.locationStats['unknown'] || 0) + 1;
-    }
-
-    // Update time stats safely
-    try {
-      const now = new Date();
-      const hour = now.getHours();
-      const day = now.getDay();
-      const month = now.getMonth();
-
-      // Initialize timeStats if not exists
-      if (!campaign.analytics.timeStats) {
-        campaign.analytics.timeStats = {
-          hourly: Array(24).fill(0),
-          daily: Array(7).fill(0),
-          monthly: Array(12).fill(0)
-        };
-      }
-
-      // Ensure each array exists and has correct length
-      if (!Array.isArray(campaign.analytics.timeStats.hourly) || 
-          campaign.analytics.timeStats.hourly.length !== 24) {
-        campaign.analytics.timeStats.hourly = Array(24).fill(0);
-      }
-      if (!Array.isArray(campaign.analytics.timeStats.daily) || 
-          campaign.analytics.timeStats.daily.length !== 7) {
-        campaign.analytics.timeStats.daily = Array(7).fill(0);
-      }
-      if (!Array.isArray(campaign.analytics.timeStats.monthly) || 
-          campaign.analytics.timeStats.monthly.length !== 12) {
-        campaign.analytics.timeStats.monthly = Array(12).fill(0);
-      }
-
-      // Safe increment of time stats
-      campaign.analytics.timeStats.hourly[hour] = 
-        (campaign.analytics.timeStats.hourly[hour] || 0) + 1;
-      campaign.analytics.timeStats.daily[day] = 
-        (campaign.analytics.timeStats.daily[day] || 0) + 1;
-      campaign.analytics.timeStats.monthly[month] = 
-        (campaign.analytics.timeStats.monthly[month] || 0) + 1;
-
-    } catch (err) {
-      console.error('Error updating time stats:', err);
-      // Initialize with default values if error occurs
-      campaign.analytics.timeStats = {
-        hourly: Array(24).fill(0),
-        daily: Array(7).fill(0),
-        monthly: Array(12).fill(0)
-      };
-    }
+    // Track click analytics using model method
+    campaign.trackClick(deviceInfo, browserInfo, location);
 
     // Save all updates with session
     await campaign.save({ session });
@@ -436,7 +232,7 @@ const trackCampaignClick = async (req, res) => {
         browser: browserInfo.browser,
         os: browserInfo.os,
         location: location,
-        timestamp: now,
+        timestamp: new Date(),
         referralCode: referralCode
       }
     };
@@ -510,6 +306,14 @@ const submitCampaignForm = async (req, res) => {
     const deviceInfo = detectDevice(userAgent);
     const browserInfo = parseUserAgent(userAgent);
     const location = await getLocationFromIP(ipAddress);
+
+    // Track form submission analytics
+    campaign.trackFormSubmission(
+      deviceInfo, 
+      browserInfo, 
+      location,
+      req.body.formFillTime
+    );
 
     // Create or update user with campaign source info 👤
     let user = await User.findOne({ email: formData.email });

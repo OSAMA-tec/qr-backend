@@ -2,6 +2,40 @@
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 
+// Analytics schema for better structure 📊
+const analyticsSchema = new mongoose.Schema({
+  totalClicks: { type: Number, default: 0 },
+  uniqueClicks: { type: Number, default: 0 },
+  formViews: { type: Number, default: 0 },
+  formSubmissions: { type: Number, default: 0 },
+  conversions: { type: Number, default: 0 },
+  revenue: { type: Number, default: 0 },
+  conversionRate: { type: Number, default: 0 },
+  deviceStats: {
+    desktop: { type: Number, default: 0 },
+    mobile: { type: Number, default: 0 },
+    tablet: { type: Number, default: 0 }
+  },
+  browserStats: {
+    chrome: { type: Number, default: 0 },
+    firefox: { type: Number, default: 0 },
+    safari: { type: Number, default: 0 },
+    edge: { type: Number, default: 0 },
+    opera: { type: Number, default: 0 },
+    other: { type: Number, default: 0 }
+  },
+  locationStats: {
+    type: Map,
+    of: Number,
+    default: new Map()
+  },
+  timeStats: {
+    hourly: { type: [Number], default: Array(24).fill(0) },
+    daily: { type: [Number], default: Array(7).fill(0) },
+    monthly: { type: [Number], default: Array(12).fill(0) }
+  }
+});
+
 // Campaign Schema 🎯
 const campaignSchema = new mongoose.Schema({
   name: {
@@ -100,14 +134,7 @@ const campaignSchema = new mongoose.Schema({
       options: [String] // For select fields
     }]
   },
-  analytics: {
-    totalClicks: { type: Number, default: 0 },
-    uniqueClicks: { type: Number, default: 0 },
-    conversions: { type: Number, default: 0 },
-    revenue: { type: Number, default: 0 },
-    conversionRate: { type: Number, default: 0 },
-    avgOrderValue: { type: Number, default: 0 }
-  },
+  analytics: { type: analyticsSchema, default: () => ({}) },
   budget: {
     total: Number,
     spent: { type: Number, default: 0 },
@@ -220,6 +247,110 @@ campaignSchema.pre('save', async function(next) {
   }
   next();
 });
+
+// Method to track click analytics 🖱️
+campaignSchema.methods.trackClick = function(deviceInfo, browserInfo, location) {
+  // Initialize analytics if not exists
+  if (!this.analytics) {
+    this.analytics = {};
+  }
+
+  // Update basic metrics
+  this.analytics.totalClicks = (this.analytics.totalClicks || 0) + 1;
+  this.analytics.uniqueClicks = (this.analytics.uniqueClicks || 0) + 1;
+
+  // Track device stats
+  const deviceType = deviceInfo?.type || 'other';
+  if (!this.analytics.deviceStats) {
+    this.analytics.deviceStats = { desktop: 0, mobile: 0, tablet: 0 };
+  }
+  this.analytics.deviceStats[deviceType] = (this.analytics.deviceStats[deviceType] || 0) + 1;
+
+  // Track browser stats
+  const browserName = (browserInfo?.browser || 'other').toLowerCase();
+  const supportedBrowsers = ['chrome', 'firefox', 'safari', 'edge', 'opera'];
+  const browserKey = supportedBrowsers.includes(browserName) ? browserName : 'other';
+  
+  if (!this.analytics.browserStats) {
+    this.analytics.browserStats = {
+      chrome: 0, firefox: 0, safari: 0, edge: 0, opera: 0, other: 0
+    };
+  }
+  this.analytics.browserStats[browserKey] = (this.analytics.browserStats[browserKey] || 0) + 1;
+
+  // Track location stats
+  if (!this.analytics.locationStats) {
+    this.analytics.locationStats = new Map();
+  }
+  const locationKey = location?.country?.toLowerCase() || 'unknown';
+  this.analytics.locationStats.set(
+    locationKey, 
+    (this.analytics.locationStats.get(locationKey) || 0) + 1
+  );
+
+  // Track time stats
+  const now = new Date();
+  if (!this.analytics.timeStats) {
+    this.analytics.timeStats = {
+      hourly: Array(24).fill(0),
+      daily: Array(7).fill(0),
+      monthly: Array(12).fill(0)
+    };
+  }
+
+  // Update time-based stats
+  this.analytics.timeStats.hourly[now.getHours()]++;
+  this.analytics.timeStats.daily[now.getDay()]++;
+  this.analytics.timeStats.monthly[now.getMonth()]++;
+
+  // Calculate conversion rate
+  if (this.analytics.totalClicks > 0) {
+    this.analytics.conversionRate = 
+      (this.analytics.conversions / this.analytics.totalClicks) * 100;
+  }
+};
+
+// Method to track form submission 📝
+campaignSchema.methods.trackFormSubmission = function(deviceInfo, browserInfo, location, formFillTime = 0) {
+  // Initialize analytics if needed
+  if (!this.analytics) {
+    this.analytics = {};
+  }
+
+  // Update basic metrics
+  this.analytics.formSubmissions = (this.analytics.formSubmissions || 0) + 1;
+  this.analytics.conversions = (this.analytics.conversions || 0) + 1;
+
+  // Track device, browser, and location
+  this.trackClick(deviceInfo, browserInfo, location);
+
+  // Update conversion rate
+  if (this.analytics.totalClicks > 0) {
+    this.analytics.conversionRate = 
+      (this.analytics.conversions / this.analytics.totalClicks) * 100;
+  }
+};
+
+// Method to get analytics summary 📊
+campaignSchema.methods.getAnalyticsSummary = function() {
+  return {
+    overview: {
+      totalClicks: this.analytics?.totalClicks || 0,
+      uniqueClicks: this.analytics?.uniqueClicks || 0,
+      formViews: this.analytics?.formViews || 0,
+      formSubmissions: this.analytics?.formSubmissions || 0,
+      conversionRate: this.analytics?.conversionRate?.toFixed(2) || "0.00"
+    },
+    deviceStats: this.analytics?.deviceStats || { desktop: 0, mobile: 0, tablet: 0 },
+    browserStats: this.analytics?.browserStats || {},
+    locationStats: Object.fromEntries(this.analytics?.locationStats || new Map()),
+    timeStats: this.analytics?.timeStats || {
+      hourly: Array(24).fill(0),
+      daily: Array(7).fill(0),
+      monthly: Array(12).fill(0)
+    }
+  };
+};
 
 // Create model 🏗️
 const Campaign = mongoose.model('Campaign', campaignSchema);
