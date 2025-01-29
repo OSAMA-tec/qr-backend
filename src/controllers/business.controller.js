@@ -5,6 +5,7 @@ const { Subscription } = require("../models/subscription.model");
 const mongoose = require("mongoose");
 const Coupon = require("../models/coupon.model");
 const CampaignLead = require("../models/campaignLead.model");
+const BusinessAnalytics = require("../models/businessAnalytics.model");
 
 // Get business profile 🏢
 const getBusinessProfile = async (req, res) => {
@@ -1115,8 +1116,6 @@ const getDashboardStats = async (req, res) => {
 
     // Get date range for monthly stats 📅
     const today = new Date();
-    const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
     
     // Get last 12 months for trends 📈
     const last12Months = Array.from({length: 12}, (_, i) => {
@@ -1128,6 +1127,13 @@ const getDashboardStats = async (req, res) => {
         monthYear: `${date.toLocaleString('default', { month: 'short' })} ${date.getFullYear()}`
       };
     }).reverse();
+
+    // Get business analytics data
+    let businessAnalytics = await BusinessAnalytics.findOne({ businessId: businessObjectId });
+    if (!businessAnalytics) {
+      businessAnalytics = new BusinessAnalytics({ businessId: businessObjectId });
+      await businessAnalytics.save();
+    }
 
     // Get all coupons stats 🎫
     const couponsStats = await Coupon.aggregate([
@@ -1154,59 +1160,8 @@ const getDashboardStats = async (req, res) => {
             }
           },
           totalQRScans: { $sum: { $ifNull: ["$analytics.qrCodeScans", 0] } },
-          totalRedemptions: { $sum: { $ifNull: ["$analytics.redemptions", 0] } },
-          totalRevenue: { $sum: { $ifNull: ["$analytics.revenue", 0] } }
+          totalRedemptions: { $sum: { $ifNull: ["$analytics.redemptions", 0] } }
         }
-      }
-    ]);
-
-    // Get monthly QR code scans trends 📊
-    const monthlyQRScans = await Coupon.aggregate([
-      {
-        $match: { 
-          businessId: businessObjectId,
-          "analytics.qrScanHistory": { $exists: true }
-        }
-      },
-      {
-        $unwind: "$analytics.qrScanHistory"
-      },
-      {
-        $group: {
-          _id: {
-            month: { $month: "$analytics.qrScanHistory.date" },
-            year: { $year: "$analytics.qrScanHistory.date" }
-          },
-          scans: { $sum: 1 }
-        }
-      },
-      {
-        $sort: { "_id.year": 1, "_id.month": 1 }
-      }
-    ]);
-
-    // Get monthly revenue trends 📈
-    const monthlyRevenue = await Coupon.aggregate([
-      {
-        $match: { 
-          businessId: businessObjectId,
-          "analytics.redemptionHistory": { $exists: true }
-        }
-      },
-      {
-        $unwind: "$analytics.redemptionHistory"
-      },
-      {
-        $group: {
-          _id: {
-            month: { $month: "$analytics.redemptionHistory.date" },
-            year: { $year: "$analytics.redemptionHistory.date" }
-          },
-          revenue: { $sum: "$analytics.redemptionHistory.amount" }
-        }
-      },
-      {
-        $sort: { "_id.year": 1, "_id.month": 1 }
       }
     ]);
 
@@ -1240,61 +1195,42 @@ const getDashboardStats = async (req, res) => {
       }
     ]);
 
-    // Get device analytics 📱
-    const deviceAnalytics = await CampaignLead.aggregate([
-      {
-        $match: { businessId: businessObjectId }
-      },
-      {
-        $group: {
-          _id: "$analytics.deviceType",
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    // Get browser analytics 🌐
-    const browserAnalytics = await CampaignLead.aggregate([
-      {
-        $match: { businessId: businessObjectId }
-      },
-      {
-        $group: {
-          _id: "$analytics.browser",
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
     // Process monthly trends data 📊
     const monthlyTrends = last12Months.map(month => {
-      const revenueData = monthlyRevenue.find(m => 
-        m._id.month === month.month + 1 && 
-        m._id.year === month.year
-      ) || { revenue: 0 };
-
-      const qrData = monthlyQRScans.find(m =>
-        m._id.month === month.month + 1 &&
-        m._id.year === month.year
-      ) || { scans: 0 };
+      const monthStats = businessAnalytics.monthlyStats.find(
+        stats => stats.month === month.month + 1 && stats.year === month.year
+      ) || { revenue: 0, qrScans: 0 };
 
       return {
         month: month.monthYear,
-        revenue: revenueData.revenue || 0,
-        qrScans: qrData.scans || 0
+        revenue: monthStats.revenue || 0,
+        qrScans: monthStats.qrScans || 0
       };
     });
+
+    // Format device and browser stats
+    const deviceStats = Object.entries(businessAnalytics.deviceStats || {}).map(([type, count]) => ({
+      type,
+      count,
+      percentage: ((count / (customerStats[0]?.totalCustomers || 1)) * 100).toFixed(1)
+    })).filter(stat => stat.count > 0);
+
+    const browserStats = Array.from(businessAnalytics.browserStats || []).map(([name, count]) => ({
+      name,
+      count,
+      percentage: ((count / (customerStats[0]?.totalCustomers || 1)) * 100).toFixed(1)
+    })).filter(stat => stat.count > 0);
 
     // Calculate total stats 📊
     const stats = {
       coupons: {
         total: couponsStats[0]?.totalCoupons || 0,
         active: couponsStats[0]?.activeCoupons || 0,
-        qrScans: couponsStats[0]?.totalQRScans || 0,
+        qrScans: businessAnalytics.totalQRScans || 0,
         redemptions: couponsStats[0]?.totalRedemptions || 0
       },
       revenue: {
-        total: couponsStats[0]?.totalRevenue || 0,
+        total: businessAnalytics.totalRevenue || 0,
         monthly: monthlyTrends[monthlyTrends.length - 1].revenue,
         trends: monthlyTrends
       },
@@ -1304,16 +1240,8 @@ const getDashboardStats = async (req, res) => {
         guest: customerStats[0]?.guestCustomers || 0
       },
       visitors: {
-        devices: deviceAnalytics.map(d => ({
-          type: d._id || 'unknown',
-          count: d.count,
-          percentage: ((d.count / (customerStats[0]?.totalCustomers || 1)) * 100).toFixed(1)
-        })),
-        browsers: browserAnalytics.map(b => ({
-          name: b._id || 'unknown',
-          count: b.count,
-          percentage: ((b.count / (customerStats[0]?.totalCustomers || 1)) * 100).toFixed(1)
-        }))
+        devices: deviceStats,
+        browsers: browserStats
       },
       monthlyStats: {
         revenue: monthlyTrends,
@@ -2203,9 +2131,10 @@ const getAllCustomers = async (req, res) => {
       res.setHeader('Content-Disposition', 'attachment; filename=customers.csv');
       
       // Convert to CSV string
+      // Create CSV string with header row and data rows
       const csvString = [
-        fields.join(','),
-        ...csv.map(row => fields.map(field => JSON.stringify(row[field])).join(','))
+        fields.join(','), // Header row with field names
+        ...csv.map(row => fields.map(field => JSON.stringify(row[field])).join(',')) // Data rows
       ].join('\n');
 
       return res.send(csvString);

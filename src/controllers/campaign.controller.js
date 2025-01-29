@@ -470,14 +470,14 @@ const submitCampaignForm = async (req, res) => {
         tablet: 0
       };
     }
-
+    
     // Update campaign analytics 📊
     campaign.analytics.formSubmissions++;
     campaign.analytics.conversions++;
     
     // Calculate conversion rate
     if (campaign.analytics.totalClicks > 0) {
-      campaign.analytics.conversionRate = 
+    campaign.analytics.conversionRate = 
         (campaign.analytics.conversions / campaign.analytics.totalClicks) * 100;
     }
 
@@ -759,11 +759,11 @@ const getCampaignAnalytics = async (req, res) => {
 
     // Calculate overview metrics
     const overview = {
-      totalClicks: campaign.analytics?.totalClicks || 0,
-      uniqueClicks: campaign.analytics?.uniqueClicks || 0,
-      formViews: campaign.analytics?.formViews || 0,
+        totalClicks: campaign.analytics?.totalClicks || 0,
+        uniqueClicks: campaign.analytics?.uniqueClicks || 0,
+        formViews: campaign.analytics?.formViews || 0,
       formSubmissions: leads.length || 0,
-      conversionRate: campaign.analytics?.totalClicks ? 
+        conversionRate: campaign.analytics?.totalClicks ? 
         ((leads.length / campaign.analytics.totalClicks) * 100).toFixed(2) : "0.00",
       averageFormFillTime: leads.reduce((acc, lead) => {
         const fillTime = lead.analytics?.formFillTime || 0;
@@ -795,9 +795,9 @@ const getCampaignAnalytics = async (req, res) => {
       acc[device] = (acc[device] || 0) + 1;
       return acc;
     }, {
-      desktop: 0,
-      mobile: 0,
-      tablet: 0
+        desktop: 0,
+        mobile: 0,
+        tablet: 0
     });
 
     // Calculate browser stats from leads
@@ -823,12 +823,12 @@ const getCampaignAnalytics = async (req, res) => {
 
     // Format recent leads
     const recentLeads = leads.slice(0, 5).map(lead => ({
-      id: lead._id,
-      email: lead.formData?.email || '',
-      name: `${lead.formData?.firstName || ''} ${lead.formData?.lastName || ''}`.trim(),
-      submittedAt: lead.analytics?.submissionTimestamp || lead.createdAt,
+        id: lead._id,
+        email: lead.formData?.email || '',
+        name: `${lead.formData?.firstName || ''} ${lead.formData?.lastName || ''}`.trim(),
+        submittedAt: lead.analytics?.submissionTimestamp || lead.createdAt,
       referralCode: lead.referralCode,
-      device: lead.analytics?.deviceType || 'unknown'
+        device: lead.analytics?.deviceType || 'unknown'
     }));
 
     // Calculate summary stats
