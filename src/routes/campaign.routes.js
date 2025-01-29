@@ -32,7 +32,7 @@ const isBusinessMiddleware = (req, res, next) => {
 };
 
 // Public routes 🌐
-router.get("/click/:referralCode", trackCampaignClick); // Track campaign click
+router.get("/ref/:referralCode", trackCampaignClick); // Track campaign click
 router.post(
   "/submit",
   campaignFormValidation,
@@ -48,7 +48,7 @@ router.use(authMiddleware);
 // Protected business routes 🔒
 router.use(isBusinessMiddleware);
 
-router.post("/", campaignValidation, createCampaign); // Create campaign
+router.post("/", createCampaign); // Create campaign
 router.get("/", getAllCampaigns); // Get all campaigns for business
 router.get("/:campaignId/analytics", getCampaignAnalytics); // Get campaign analytics
 

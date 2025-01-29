@@ -45,7 +45,6 @@ const createCampaign = async (req, res) => {
     const voucher = await Coupon.findOne({
       _id: campaignData.voucherId,
       businessId,
-      // isActive: true
     });
 
     if (!voucher) {
@@ -55,40 +54,71 @@ const createCampaign = async (req, res) => {
       });
     }
 
-    // Validate dates match voucher validity
-    const campaignStart = new Date(campaignData.startDate);
-    const campaignEnd = new Date(campaignData.endDate);
-    const voucherStart = new Date(voucher.startDate);
-    const voucherEnd = new Date(voucher.endDate);
+    // Process campaign type specific data
+    switch (campaignData.type) {
+      case 'google_ads':
+        // Validate Google Ads details
+        if (!campaignData.googleAdsDetails || !campaignData.googleAdsDetails.adsId) {
+          return res.status(400).json({
+            success: false,
+            message: 'Google Ads ID is required! 🚫'
+          });
+        }
+        // Generate referral code for Google Ads
+        campaignData.googleAdsDetails.referralCode = generateReferralCode(campaignData._id, `GA-${campaignData.googleAdsDetails.adsId}`);
+        break;
 
-    // if (campaignStart < voucherStart || campaignEnd > voucherEnd) {
-    //   return res.status(400).json({
-    //     success: false,
-    //     message: 'Campaign dates must be within voucher validity period! ⚠️',
-    //     data: {
-    //       voucherValidity: {
-    //         start: voucherStart,
-    //         end: voucherEnd
-    //       }
-    //     }
-    //   });
-    // }
+      case 'agency':
+        // Validate Agency details
+        if (!campaignData.agencyDetails || !campaignData.agencyDetails.name || !campaignData.agencyDetails.contactPerson) {
+          return res.status(400).json({
+            success: false,
+            message: 'Agency name and contact details are required! 🚫'
+          });
+        }
+        // Generate referral code for Agency
+        campaignData.agencyDetails.referralCode = generateReferralCode(campaignData._id, `AG-${campaignData.agencyDetails.name}`);
+        break;
 
-    // Process form config
-    if (campaignData.formConfig) {
-      campaignData.formConfig.fields = campaignData.formConfig.fields.map(field => ({
-        name: field.name,
-        type: field.type,
-        required: field.isRequired || false,
-        options: field.options || []
-      }));
+      case 'business':
+        // Validate Business details
+        if (!campaignData.businessDetails || !campaignData.businessDetails.name || !campaignData.businessDetails.contactPerson) {
+          return res.status(400).json({
+            success: false,
+            message: 'Business name and contact details are required! 🚫'
+          });
+        }
+        // Generate referral code for Business
+        campaignData.businessDetails.referralCode = generateReferralCode(campaignData._id, `BZ-${campaignData.businessDetails.name}`);
+        break;
+
+      case 'influencer':
+        // Process form config for influencer campaigns
+        if (campaignData.formConfig) {
+          campaignData.formConfig.fields = campaignData.formConfig.fields.map(field => ({
+            name: field.name,
+            type: field.type,
+            required: field.isRequired || false,
+            options: field.options || []
+          }));
+        }
+
+        // Generate referral codes for influencers
+        if (campaignData.influencers) {
+          campaignData.influencers = campaignData.influencers.map(inf => ({
+            ...inf,
+            referralCode: generateReferralCode(campaignData._id, inf.name),
+            stats: { clicks: 0, conversions: 0, revenue: 0 }
+          }));
+        }
+        break;
     }
 
-    // Create campaign with voucher reference 🎯 //
+    // Create campaign with type-specific details 🎯
     const campaign = new Campaign({
       ...campaignData,
       businessId,
-      status: 'draft' // Always start as draft
+      status: 'draft'
     });
 
     await campaign.save();
@@ -105,23 +135,48 @@ const createCampaign = async (req, res) => {
       }
     ]);
 
-    res.status(201).json({
-      success: true,
-      message: 'Campaign created successfully! 🎉',
-      data: {
-        campaign,
-        shareUrls: campaign.influencers.map(inf => ({
+    // Prepare response based on campaign type
+    let responseData = {
+      campaign,
+      message: 'Campaign created successfully! 🎉'
+    };
+
+    // Add type-specific data to response
+    switch (campaign.type) {
+      case 'influencer':
+        responseData.shareUrls = campaign.influencers.map(inf => ({
           name: inf.name,
           platform: inf.platform,
           referralCode: inf.referralCode,
           shareUrl: `${process.env.BASE_URL}/ref/${inf.referralCode}`
-        }))
-      }
+        }));
+        break;
+
+      case 'google_ads':
+        responseData.shareUrl = `${process.env.BASE_URL}/ref/${campaign.googleAdsDetails.referralCode}`;
+        responseData.googleAdsLink = `https://ads.google.com/aw/campaigns/${campaign.googleAdsDetails.adsId}`;
+        break;
+
+      case 'agency':
+        responseData.shareUrl = `${process.env.BASE_URL}/ref/${campaign.agencyDetails.referralCode}`;
+        responseData.agencyPortalLink = `${process.env.BASE_URL}/agency/campaigns/${campaign._id}`;
+        break;
+
+      case 'business':
+        responseData.shareUrl = `${process.env.BASE_URL}/ref/${campaign.businessDetails.referralCode}`;
+        responseData.businessDashboardLink = `${process.env.BASE_URL}/business/campaigns/${campaign._id}`;
+        break;
+    }
+
+    res.status(201).json({
+      success: true,
+      message: responseData.message,
+      data: responseData
     });
+
   } catch (error) {
     console.error('Create campaign error:', error);
     
-    // Handle validation errors ❌
     if (error.name === 'ValidationError') {
       const validationErrors = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -131,7 +186,6 @@ const createCampaign = async (req, res) => {
       });
     }
 
-    // Handle cast errors (invalid ObjectId)
     if (error.name === 'CastError') {
       return res.status(400).json({
         success: false,
@@ -156,9 +210,14 @@ const trackCampaignClick = async (req, res) => {
     const userAgent = req.headers['user-agent'];
     const ipAddress = req.ip;
 
-    // Find campaign by referral code 🔍
+    // Find campaign by referral code for any type 🔍
     const campaign = await Campaign.findOne({
-      'influencers.referralCode': referralCode,
+      $or: [
+        { 'influencers.referralCode': referralCode },
+        { 'googleAdsDetails.referralCode': referralCode },
+        { 'agencyDetails.referralCode': referralCode },
+        { 'businessDetails.referralCode': referralCode }
+      ]
     }).populate('businessId', 'businessProfile email');
 
     if (!campaign) {
@@ -168,14 +227,77 @@ const trackCampaignClick = async (req, res) => {
       });
     }
 
-    // Get influencer index 👤
-    const influencerIndex = campaign.influencers.findIndex(inf => inf.referralCode === referralCode);
-    
-    if (influencerIndex === -1) {
-      return res.status(404).json({
-        success: false,
-        message: 'Invalid referral code! 🚫'
-      });
+    // Get source details based on campaign type
+    let sourceDetails = null;
+    let sourceType = campaign.type;
+
+    switch (campaign.type) {
+      case 'influencer':
+        const influencer = campaign.influencers.find(inf => inf.referralCode === referralCode);
+        if (!influencer) {
+          return res.status(404).json({
+            success: false,
+            message: 'Invalid referral code! 🚫'
+          });
+        }
+        sourceDetails = {
+          type: 'influencer',
+          name: influencer.name,
+          platform: influencer.platform,
+          stats: influencer.stats
+        };
+        // Update influencer stats
+        const influencerIndex = campaign.influencers.findIndex(inf => inf.referralCode === referralCode);
+        campaign.influencers[influencerIndex].stats.clicks++;
+        break;
+
+      case 'google_ads':
+        if (campaign.googleAdsDetails.referralCode !== referralCode) {
+          return res.status(404).json({
+            success: false,
+            message: 'Invalid referral code! 🚫'
+          });
+        }
+        sourceDetails = {
+          type: 'google_ads',
+          adsId: campaign.googleAdsDetails.adsId,
+          stats: campaign.googleAdsDetails.stats
+        };
+        // Update Google Ads stats
+        campaign.googleAdsDetails.stats.clicks++;
+        break;
+
+      case 'agency':
+        if (campaign.agencyDetails.referralCode !== referralCode) {
+          return res.status(404).json({
+            success: false,
+            message: 'Invalid referral code! 🚫'
+          });
+        }
+        sourceDetails = {
+          type: 'agency',
+          name: campaign.agencyDetails.name,
+          stats: campaign.agencyDetails.stats
+        };
+        // Update Agency stats
+        campaign.agencyDetails.stats.clicks++;
+        break;
+
+      case 'business':
+        if (campaign.businessDetails.referralCode !== referralCode) {
+          return res.status(404).json({
+            success: false,
+            message: 'Invalid referral code! 🚫'
+          });
+        }
+        sourceDetails = {
+          type: 'business',
+          name: campaign.businessDetails.name,
+          stats: campaign.businessDetails.stats
+        };
+        // Update Business stats
+        campaign.businessDetails.stats.clicks++;
+        break;
     }
 
     // Track device and location info 📱
@@ -225,7 +347,8 @@ const trackCampaignClick = async (req, res) => {
           discountValue: voucher.discountValue,
           minimumPurchase: voucher.minimumPurchase,
           question: voucher.question || null
-        } : null
+        } : null,
+        source: sourceDetails
       },
       tracking: {
         deviceType: deviceInfo.type,
@@ -871,11 +994,12 @@ const getCampaignAnalytics = async (req, res) => {
 const getAllCampaigns = async (req, res) => {
   try {
     const businessId = req.user.userId;
-    const { status, page = 1, limit = 10, search } = req.query;
+    const { status, type, page = 1, limit = 10, search } = req.query;
 
     // Build query 🔍
     const query = { businessId };
     if (status) query.status = status;
+    if (type) query.type = type;
     if (search) {
       query.$or = [
         { name: new RegExp(search, 'i') },
@@ -914,14 +1038,13 @@ const getAllCampaigns = async (req, res) => {
       }
 
       // Process influencer links with API endpoint format 🔗
-      const influencerLinks = campaign.influencers.map(inf => ({
+      const influencerLinks = campaign.influencers?.map(inf => ({
         id: inf._id,
         name: inf.name,
         type: inf.type,
         platform: inf.platform,
         referralCode: inf.referralCode,
-        // Format link as API endpoint using env URL
-        referralLink: `${apiUrl}/api/campaigns/click/${inf.referralCode}`,
+        referralLink: `${apiUrl}/api/campaigns/ref/${inf.referralCode}`,
         stats: {
           clicks: inf.stats?.clicks || 0,
           conversions: inf.stats?.conversions || 0,
@@ -930,7 +1053,7 @@ const getAllCampaigns = async (req, res) => {
             ((inf.stats.conversions / inf.stats.clicks) * 100).toFixed(2) : 
             "0.00"
         }
-      }));
+      })) || [];
 
       // Format voucher info 🎫
       const voucherInfo = campaign.voucherId ? {
@@ -959,8 +1082,8 @@ const getAllCampaigns = async (req, res) => {
           "0.00"
       };
 
-      // Add question and answers data
-      return {
+      // Base campaign data with original structure
+      const campaignData = {
         id: campaign._id,
         name: campaign.name,
         description: campaign.description,
@@ -997,9 +1120,50 @@ const getAllCampaigns = async (req, res) => {
           uniqueUsers: new Set(campaign.answers.map(a => a.userId?.toString())).size
         }
       };
+
+      // Add type-specific data without modifying original structure
+      if (campaign.type === 'google_ads' && campaign.googleAdsDetails) {
+        campaignData.googleAdsDetails = {
+          adsId: campaign.googleAdsDetails.adsId,
+          stats: campaign.googleAdsDetails.stats || {
+            clicks: 0,
+            conversions: 0,
+            revenue: 0
+          },
+          referralLink: `${apiUrl}/api/campaigns/ref/${campaign.googleAdsDetails.referralCode}`,
+        };
+      }
+
+      if (campaign.type === 'agency' && campaign.agencyDetails) {
+        campaignData.agencyDetails = {
+          name: campaign.agencyDetails.name,
+          contactPerson: campaign.agencyDetails.contactPerson,
+          stats: campaign.agencyDetails.stats || {
+            clicks: 0,
+            conversions: 0,
+            revenue: 0
+          },
+          referralLink: `${apiUrl}/api/campaigns/ref/${campaign.agencyDetails.referralCode}`,
+        };
+      }
+
+      if (campaign.type === 'business' && campaign.businessDetails) {
+        campaignData.businessDetails = {
+          name: campaign.businessDetails.name,
+          contactPerson: campaign.businessDetails.contactPerson,
+          stats: campaign.businessDetails.stats || {
+            clicks: 0,
+            conversions: 0,
+            revenue: 0
+          },
+          referralLink: `${apiUrl}/api/campaigns/ref/${campaign.businessDetails.referralCode}`,
+        };
+      }
+
+      return campaignData;
     });
 
-    // Return formatted response 📬
+    // Return formatted response with original structure 📬
     res.json({
       success: true,
       message: 'Campaigns retrieved successfully! 🎉',
@@ -1016,7 +1180,14 @@ const getAllCampaigns = async (req, res) => {
           active: processedCampaigns.filter(c => c.status === 'active').length,
           scheduled: processedCampaigns.filter(c => c.status === 'scheduled').length,
           completed: processedCampaigns.filter(c => c.status === 'completed').length,
-          paused: processedCampaigns.filter(c => c.status === 'paused').length
+          paused: processedCampaigns.filter(c => c.status === 'paused').length,
+          // Add type summary without modifying original structure
+          byType: {
+            influencer: processedCampaigns.filter(c => c.type === 'influencer').length,
+            google_ads: processedCampaigns.filter(c => c.type === 'google_ads').length,
+            agency: processedCampaigns.filter(c => c.type === 'agency').length,
+            business: processedCampaigns.filter(c => c.type === 'business').length
+          }
         }
       }
     });

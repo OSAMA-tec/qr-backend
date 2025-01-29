@@ -64,8 +64,8 @@ const campaignSchema = new mongoose.Schema({
   type: {
     type: String,
     enum: {
-      values: ['referral', 'influencer', 'partner'],
-      message: 'Invalid campaign type! Must be: referral, influencer, or partner'
+      values: ['referral', 'influencer', 'partner', 'google_ads', 'agency', 'business'],
+      message: 'Invalid campaign type! Must be one of: referral, influencer, partner, google_ads, agency, business'
     },
     required: [true, 'Campaign type is required! 📊']
   },
@@ -180,7 +180,75 @@ const campaignSchema = new mongoose.Schema({
       type: Date,
       default: Date.now
     }
-  }]
+  }],
+  // Campaign Type Specific Details
+  googleAdsDetails: {
+    adsId: {
+      type: String,
+      required: function() {
+        return this.type === 'google_ads';
+      }
+    },
+    referralCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true
+    },
+    stats: {
+      clicks: { type: Number, default: 0 },
+      conversions: { type: Number, default: 0 },
+      revenue: { type: Number, default: 0 }
+    }
+  },
+  agencyDetails: {
+    name: {
+      type: String,
+      required: function() {
+        return this.type === 'agency';
+      }
+    },
+    contactPerson: {
+      name: String,
+      email: String,
+      phone: String
+    },
+    referralCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true
+    },
+    stats: {
+      clicks: { type: Number, default: 0 },
+      conversions: { type: Number, default: 0 },
+      revenue: { type: Number, default: 0 }
+    }
+  },
+  businessDetails: {
+    name: {
+      type: String,
+      required: function() {
+        return this.type === 'business';
+      }
+    },
+    contactPerson: {
+      name: String,
+      email: String,
+      phone: String
+    },
+    referralCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true
+    },
+    stats: {
+      clicks: { type: Number, default: 0 },
+      conversions: { type: Number, default: 0 },
+      revenue: { type: Number, default: 0 }
+    }
+  }
 }, {
   timestamps: true
 });
