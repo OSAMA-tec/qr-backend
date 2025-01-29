@@ -6,6 +6,8 @@ const WidgetTemplate = require('../models/widgetTemplate.model');
 const QRCode = require('qrcode');
 const crypto = require('crypto');
 const BusinessAnalytics = require('../models/businessAnalytics.model');
+const mongoose = require('mongoose');
+const Campaign = require('../models/campaign.model');
 
 // Create new voucher template 🎟️
 const createVoucher = async (req, res) => {
@@ -471,6 +473,9 @@ const generateReferenceNumber = () => {
 
 // Redeem voucher 💫
 const redeemVoucher = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const { voucherId, customerId, amount, location } = req.body;
     const businessId = req.user.userId;
@@ -541,7 +546,8 @@ const redeemVoucher = async (req, res) => {
             'voucherClaims.$.status': 'expired',
             'voucherClaims.$.updatedAt': new Date()
           }
-        }
+        },
+        { session }
       );
 
       return res.status(400).json({
@@ -574,7 +580,7 @@ const redeemVoucher = async (req, res) => {
       referenceNumber: generateReferenceNumber()
     });
 
-    await transaction.save();
+    await transaction.save({ session });
 
     // Update user's voucher claim status ✅
     await User.updateOne(
@@ -589,7 +595,8 @@ const redeemVoucher = async (req, res) => {
           'voucherClaims.$.analytics.redeemDate': new Date(),
           'voucherClaims.$.transactionId': transaction._id
         }
-      }
+      },
+      { session }
     );
 
     // Update voucher usage and analytics 📊
@@ -599,13 +606,15 @@ const redeemVoucher = async (req, res) => {
         $inc: { 
           currentUsage: 1,
           'analytics.redemptions': 1,
-          'analytics.totalRevenue': amount
+          'analytics.totalRevenue': amount,
+          'analytics.totalDiscounts': discountAmount
         },
         $set: {
           usedTrue: true,
           updatedAt: new Date()
         }
-      }
+      },
+      { session }
     );
 
     // Update business analytics 📈
@@ -623,15 +632,82 @@ const redeemVoucher = async (req, res) => {
     ]);
 
     // Save analytics
-    await businessAnalytics.save();
+    await businessAnalytics.save({ session });
+
+    // If voucher was claimed through campaign, update campaign analytics 🎯
+    if (userClaim.source?.type === 'campaign' && userClaim.source.campaignId) {
+      const campaign = await Campaign.findById(userClaim.source.campaignId);
+      
+      if (campaign) {
+        // Initialize analytics if not exists
+        if (!campaign.analytics) {
+          campaign.analytics = {
+            totalClicks: 0,
+            uniqueClicks: 0,
+            formViews: 0,
+            formSubmissions: 0,
+            conversions: 0,
+            revenue: 0,
+            deviceStats: {
+              desktop: 0,
+              mobile: 0,
+              tablet: 0
+            },
+            browserStats: new Map(),
+            locationStats: new Map(),
+            timeStats: {
+              hourly: Array(24).fill(0),
+              daily: Array(7).fill(0),
+              monthly: Array(12).fill(0)
+            }
+          };
+        }
+
+        // Update campaign revenue and conversion metrics
+        campaign.analytics.revenue += amount;
+        campaign.analytics.conversions++;
+        
+        // Calculate conversion rate
+        if (campaign.analytics.totalClicks > 0) {
+          campaign.analytics.conversionRate = 
+            (campaign.analytics.conversions / campaign.analytics.totalClicks) * 100;
+        }
+
+        // Calculate average order value
+        if (campaign.analytics.conversions > 0) {
+          campaign.analytics.avgOrderValue = 
+            campaign.analytics.revenue / campaign.analytics.conversions;
+        }
+
+        // Update influencer stats if referral code exists
+        if (userClaim.source.referralCode) {
+          const influencerIndex = campaign.influencers.findIndex(
+            inf => inf.referralCode === userClaim.source.referralCode
+          );
+
+          if (influencerIndex !== -1) {
+            campaign.influencers[influencerIndex].stats = {
+              clicks: campaign.influencers[influencerIndex].stats?.clicks || 0,
+              conversions: (campaign.influencers[influencerIndex].stats?.conversions || 0) + 1,
+              revenue: (campaign.influencers[influencerIndex].stats?.revenue || 0) + amount
+            };
+          }
+        }
+
+        await campaign.save({ session });
+      }
+    }
 
     // Check if voucher has reached usage limit 🎯
     if (voucher.usageLimit?.perCoupon && voucher.currentUsage + 1 >= voucher.usageLimit.perCoupon) {
       await Coupon.updateOne(
         { _id: voucherId },
-        { $set: { isActive: false } }
+        { $set: { isActive: false } },
+        { session }
       );
     }
+
+    await session.commitTransaction();
 
     res.json({
       success: true,
@@ -665,6 +741,7 @@ const redeemVoucher = async (req, res) => {
     });
 
   } catch (error) {
+    await session.abortTransaction();
     console.error('Redeem voucher error:', error);
     
     // Handle specific error cases
@@ -698,6 +775,8 @@ const redeemVoucher = async (req, res) => {
       success: false,
       message: 'Failed to redeem voucher! 😢'
     });
+  } finally {
+    session.endSession();
   }
 };
 

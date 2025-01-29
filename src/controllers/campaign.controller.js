@@ -148,6 +148,9 @@ const createCampaign = async (req, res) => {
 
 // Track campaign click 🖱️
 const trackCampaignClick = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const { referralCode } = req.params;
     const userAgent = req.headers['user-agent'];
@@ -156,10 +159,7 @@ const trackCampaignClick = async (req, res) => {
     // Find campaign by referral code 🔍
     const campaign = await Campaign.findOne({
       'influencers.referralCode': referralCode,
-      // status: 'active',
-      // startDate: { $lte: new Date() },
-      // endDate: { $gte: new Date() }
-    }).populate('businessId', 'businessProfile email'); // 👈 Populate business details
+    }).populate('businessId', 'businessProfile email');
 
     if (!campaign) {
       return res.status(404).json({
@@ -183,14 +183,58 @@ const trackCampaignClick = async (req, res) => {
     const browserInfo = parseUserAgent(userAgent);
     const location = await getLocationFromIP(ipAddress);
 
-    // Update influencer stats 📊
-    campaign.influencers[influencerIndex].stats.clicks++;
-    
-    // Update campaign analytics 📈
-    campaign.analytics.totalClicks = (campaign.analytics.totalClicks || 0) + 1;
-    campaign.analytics.uniqueClicks = (campaign.analytics.uniqueClicks || 0) + 1;
+    // Initialize influencer stats if not exists
+    if (!campaign.influencers[influencerIndex].stats) {
+      campaign.influencers[influencerIndex].stats = {
+        clicks: 0,
+        conversions: 0,
+        revenue: 0
+      };
+    }
 
-    // Track device stats 📱
+    // Update influencer clicks
+    campaign.influencers[influencerIndex].stats.clicks++;
+
+    // Initialize analytics with complete structure if not exists
+    if (!campaign.analytics) {
+      campaign.analytics = {
+        totalClicks: 0,
+        uniqueClicks: 0,
+        formViews: 0,
+        formSubmissions: 0,
+        conversions: 0,
+        revenue: 0,
+        deviceStats: {
+          desktop: 0,
+          mobile: 0,
+          tablet: 0
+        },
+        browserStats: {
+          chrome: 0,
+          firefox: 0,
+          safari: 0,
+          edge: 0,
+          opera: 0,
+          other: 0
+        },
+        locationStats: {},
+        timeStats: {
+          hourly: Array(24).fill(0),
+          daily: Array(7).fill(0),
+          monthly: Array(12).fill(0)
+        }
+      };
+    }
+
+    // Ensure all required properties exist
+    campaign.analytics.totalClicks = campaign.analytics.totalClicks || 0;
+    campaign.analytics.uniqueClicks = campaign.analytics.uniqueClicks || 0;
+    campaign.analytics.formViews = campaign.analytics.formViews || 0;
+    campaign.analytics.formSubmissions = campaign.analytics.formSubmissions || 0;
+    campaign.analytics.conversions = campaign.analytics.conversions || 0;
+    campaign.analytics.revenue = campaign.analytics.revenue || 0;
+
+    // Initialize deviceStats if not exists or incomplete
     if (!campaign.analytics.deviceStats) {
       campaign.analytics.deviceStats = {
         desktop: 0,
@@ -198,31 +242,25 @@ const trackCampaignClick = async (req, res) => {
         tablet: 0
       };
     }
-    campaign.analytics.deviceStats[deviceInfo.type]++;
 
-    // Track browser stats 🌐
+    // Initialize browserStats if not exists or incomplete
     if (!campaign.analytics.browserStats) {
-      campaign.analytics.browserStats = new Map();
+      campaign.analytics.browserStats = {
+        chrome: 0,
+        firefox: 0,
+        safari: 0,
+        edge: 0,
+        opera: 0,
+        other: 0
+      };
     }
-    const browserKey = browserInfo.browser.toLowerCase();
-    campaign.analytics.browserStats.set(
-      browserKey,
-      (campaign.analytics.browserStats.get(browserKey) || 0) + 1
-    );
 
-    // Track location stats 🌍
+    // Initialize locationStats if not exists
     if (!campaign.analytics.locationStats) {
-      campaign.analytics.locationStats = new Map();
-    }
-    if (location.country) {
-      const locationKey = location.country.toLowerCase();
-      campaign.analytics.locationStats.set(
-        locationKey,
-        (campaign.analytics.locationStats.get(locationKey) || 0) + 1
-      );
+      campaign.analytics.locationStats = {};
     }
 
-    // Track time stats ⏰
+    // Initialize timeStats if not exists or incomplete
     if (!campaign.analytics.timeStats) {
       campaign.analytics.timeStats = {
         hourly: Array(24).fill(0),
@@ -230,13 +268,130 @@ const trackCampaignClick = async (req, res) => {
         monthly: Array(12).fill(0)
       };
     }
-    const now = new Date();
-    campaign.analytics.timeStats.hourly[now.getHours()]++;
-    campaign.analytics.timeStats.daily[now.getDay()]++;
-    campaign.analytics.timeStats.monthly[now.getMonth()]++;
 
-    // Save all updates 💾
-    await campaign.save();
+    // Update campaign analytics 📊
+    campaign.analytics.formSubmissions++;
+    campaign.analytics.conversions++;
+    
+    // Calculate conversion rate
+    if (campaign.analytics.totalClicks > 0) {
+      campaign.analytics.conversionRate = 
+        (campaign.analytics.conversions / campaign.analytics.totalClicks) * 100;
+    }
+
+    // Update device stats with safe increment
+    const deviceType = deviceInfo.type || 'other';
+    campaign.analytics.deviceStats[deviceType] = 
+      (campaign.analytics.deviceStats[deviceType] || 0) + 1;
+
+    // Update browser stats safely
+    try {
+      // Get browser info with fallback
+      const browserName = (browserInfo?.browser || 'other').toLowerCase();
+      const supportedBrowsers = ['chrome', 'firefox', 'safari', 'edge', 'opera'];
+      
+      // Ensure browserStats exists
+      if (typeof campaign.analytics.browserStats !== 'object') {
+        campaign.analytics.browserStats = {
+          chrome: 0,
+          firefox: 0,
+          safari: 0,
+          edge: 0,
+          opera: 0,
+          other: 0
+        };
+      }
+      
+      // Use 'other' if browser is not in supported list
+      const browserKey = supportedBrowsers.includes(browserName) ? browserName : 'other';
+      
+      // Safe increment with fallback
+      campaign.analytics.browserStats[browserKey] = 
+        (campaign.analytics.browserStats[browserKey] || 0) + 1;
+    } catch (err) {
+      console.error('Error updating browser stats:', err);
+      // If any error occurs, increment 'other'
+      campaign.analytics.browserStats.other = 
+        (campaign.analytics.browserStats.other || 0) + 1;
+    }
+
+    // Update location stats safely
+    try {
+      // Initialize locationStats if not exists
+      if (!campaign.analytics.locationStats) {
+        campaign.analytics.locationStats = {};
+      }
+
+      // Only update if location data exists and has country info
+      if (location && typeof location === 'object' && location.country) {
+        const locationKey = location.country.toLowerCase();
+        campaign.analytics.locationStats[locationKey] = 
+          (campaign.analytics.locationStats[locationKey] || 0) + 1;
+      } else {
+        // Track unknown location
+        campaign.analytics.locationStats['unknown'] = 
+          (campaign.analytics.locationStats['unknown'] || 0) + 1;
+      }
+    } catch (err) {
+      console.error('Error updating location stats:', err);
+      // If any error occurs, increment unknown
+      if (!campaign.analytics.locationStats) {
+        campaign.analytics.locationStats = {};
+      }
+      campaign.analytics.locationStats['unknown'] = 
+        (campaign.analytics.locationStats['unknown'] || 0) + 1;
+    }
+
+    // Update time stats safely
+    try {
+      const now = new Date();
+      const hour = now.getHours();
+      const day = now.getDay();
+      const month = now.getMonth();
+
+      // Initialize timeStats if not exists
+      if (!campaign.analytics.timeStats) {
+        campaign.analytics.timeStats = {
+          hourly: Array(24).fill(0),
+          daily: Array(7).fill(0),
+          monthly: Array(12).fill(0)
+        };
+      }
+
+      // Ensure each array exists and has correct length
+      if (!Array.isArray(campaign.analytics.timeStats.hourly) || 
+          campaign.analytics.timeStats.hourly.length !== 24) {
+        campaign.analytics.timeStats.hourly = Array(24).fill(0);
+      }
+      if (!Array.isArray(campaign.analytics.timeStats.daily) || 
+          campaign.analytics.timeStats.daily.length !== 7) {
+        campaign.analytics.timeStats.daily = Array(7).fill(0);
+      }
+      if (!Array.isArray(campaign.analytics.timeStats.monthly) || 
+          campaign.analytics.timeStats.monthly.length !== 12) {
+        campaign.analytics.timeStats.monthly = Array(12).fill(0);
+      }
+
+      // Safe increment of time stats
+      campaign.analytics.timeStats.hourly[hour] = 
+        (campaign.analytics.timeStats.hourly[hour] || 0) + 1;
+      campaign.analytics.timeStats.daily[day] = 
+        (campaign.analytics.timeStats.daily[day] || 0) + 1;
+      campaign.analytics.timeStats.monthly[month] = 
+        (campaign.analytics.timeStats.monthly[month] || 0) + 1;
+
+    } catch (err) {
+      console.error('Error updating time stats:', err);
+      // Initialize with default values if error occurs
+      campaign.analytics.timeStats = {
+        hourly: Array(24).fill(0),
+        daily: Array(7).fill(0),
+        monthly: Array(12).fill(0)
+      };
+    }
+
+    // Save all updates with session
+    await campaign.save({ session });
 
     // Get voucher details for form 🎫
     const voucher = await Coupon.findById(campaign.voucherId)
@@ -257,7 +412,7 @@ const trackCampaignClick = async (req, res) => {
         name: campaign.name,
         type: campaign.type,
         businessId: campaign.businessId._id,
-        business: {  // Include business details
+        business: {
           id: campaign.businessId._id,
           email: campaign.businessId.email,
           businessName: campaign.businessId.businessProfile?.businessName,
@@ -265,7 +420,7 @@ const trackCampaignClick = async (req, res) => {
           description: campaign.businessId.businessProfile?.description,
           location: campaign.businessId.businessProfile?.location
         },
-        question: campaign.question || null, // Include campaign question
+        question: campaign.question || null,
         voucher: voucher ? {
           code: voucher.code,
           title: voucher.title,
@@ -285,7 +440,9 @@ const trackCampaignClick = async (req, res) => {
         referralCode: referralCode
       }
     };
-    console.log(responseData)
+
+    await session.commitTransaction();
+
     // Encode the data as base64 🔐
     const token = Buffer.from(JSON.stringify(responseData)).toString('base64');
 
@@ -294,14 +451,20 @@ const trackCampaignClick = async (req, res) => {
     res.redirect(claimUrl);
 
   } catch (error) {
+    await session.abortTransaction();
     console.error('Track campaign click error:', error);
     // In case of error, redirect to error page
     res.redirect(`${process.env.CLIENT_URL}/campaign/error?message=${encodeURIComponent('Failed to process campaign link! 😢')}`);
+  } finally {
+    session.endSession();
   }
 };
 
 // Submit campaign form 📝
 const submitCampaignForm = async (req, res) => {
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   try {
     const { campaignId, referralCode, formData } = req.body;
     const userAgent = req.headers['user-agent'];
@@ -393,9 +556,8 @@ const submitCampaignForm = async (req, res) => {
           }
         }]
       });
-      await user.save();
+      await user.save({ session });
     } else {
-      // If user exists, add the voucher claim if they haven't claimed it yet
       const existingClaim = user.voucherClaims?.find(
         claim => claim.voucherId.toString() === campaign.voucherId._id.toString()
       );
@@ -422,7 +584,8 @@ const submitCampaignForm = async (req, res) => {
                 }
               }
             }
-          }
+          },
+          { session }
         );
       }
     }
@@ -454,19 +617,178 @@ const submitCampaignForm = async (req, res) => {
       }
     });
 
-    await lead.save();
+    await lead.save({ session });
 
     // Update influencer stats 📈
     const influencerIndex = campaign.influencers.findIndex(inf => inf.referralCode === referralCode);
-    campaign.influencers[influencerIndex].stats.conversions++;
+    campaign.influencers[influencerIndex].stats = {
+      clicks: campaign.influencers[influencerIndex].stats?.clicks || 0,
+      conversions: (campaign.influencers[influencerIndex].stats?.conversions || 0) + 1,
+      revenue: campaign.influencers[influencerIndex].stats?.revenue || 0
+    };
     
-    // Update campaign analytics 📊
-    campaign.analytics.formSubmissions = (campaign.analytics.formSubmissions || 0) + 1;
-    campaign.analytics.totalConversions = (campaign.analytics.totalConversions || 0) + 1;
-    campaign.analytics.conversionRate = 
-      (campaign.analytics.totalConversions / campaign.analytics.totalClicks) * 100;
+    // Initialize analytics if not exists
+    if (!campaign.analytics) {
+      campaign.analytics = {
+        totalClicks: 0,
+        uniqueClicks: 0,
+        formViews: 0,
+        formSubmissions: 0,
+        conversions: 0,
+        revenue: 0,
+        deviceStats: {
+          desktop: 0,
+          mobile: 0,
+          tablet: 0
+        },
+        browserStats: {
+          chrome: 0,
+          firefox: 0,
+          safari: 0,
+          edge: 0,
+          opera: 0,
+          other: 0
+        },
+        locationStats: {},
+        timeStats: {
+          hourly: Array(24).fill(0),
+          daily: Array(7).fill(0),
+          monthly: Array(12).fill(0)
+        }
+      };
+    }
 
-    await campaign.save();
+    // Initialize deviceStats if not exists
+    if (!campaign.analytics.deviceStats) {
+      campaign.analytics.deviceStats = {
+        desktop: 0,
+        mobile: 0,
+        tablet: 0
+      };
+    }
+
+    // Update campaign analytics 📊
+    campaign.analytics.formSubmissions++;
+    campaign.analytics.conversions++;
+    
+    // Calculate conversion rate
+    if (campaign.analytics.totalClicks > 0) {
+      campaign.analytics.conversionRate = 
+        (campaign.analytics.conversions / campaign.analytics.totalClicks) * 100;
+    }
+
+    // Update device stats with safe increment
+    campaign.analytics.deviceStats[deviceInfo.type] = 
+      (campaign.analytics.deviceStats[deviceInfo.type] || 0) + 1;
+
+    // Update browser stats safely
+    try {
+      // Get browser info with fallback
+      const browserName = (browserInfo?.browser || 'other').toLowerCase();
+      const supportedBrowsers = ['chrome', 'firefox', 'safari', 'edge', 'opera'];
+      
+      // Ensure browserStats exists
+      if (typeof campaign.analytics.browserStats !== 'object') {
+        campaign.analytics.browserStats = {
+          chrome: 0,
+          firefox: 0,
+          safari: 0,
+          edge: 0,
+          opera: 0,
+          other: 0
+        };
+      }
+      
+      // Use 'other' if browser is not in supported list
+      const browserKey = supportedBrowsers.includes(browserName) ? browserName : 'other';
+      
+      // Safe increment with fallback
+      campaign.analytics.browserStats[browserKey] = 
+        (campaign.analytics.browserStats[browserKey] || 0) + 1;
+    } catch (err) {
+      console.error('Error updating browser stats:', err);
+      // If any error occurs, increment 'other'
+      campaign.analytics.browserStats.other = 
+        (campaign.analytics.browserStats.other || 0) + 1;
+    }
+
+    // Update location stats safely
+    try {
+      // Initialize locationStats if not exists
+      if (!campaign.analytics.locationStats) {
+        campaign.analytics.locationStats = {};
+      }
+
+      // Only update if location data exists and has country info
+      if (location && typeof location === 'object' && location.country) {
+        const locationKey = location.country.toLowerCase();
+        campaign.analytics.locationStats[locationKey] = 
+          (campaign.analytics.locationStats[locationKey] || 0) + 1;
+      } else {
+        // Track unknown location
+        campaign.analytics.locationStats['unknown'] = 
+          (campaign.analytics.locationStats['unknown'] || 0) + 1;
+      }
+    } catch (err) {
+      console.error('Error updating location stats:', err);
+      // If any error occurs, increment unknown
+      if (!campaign.analytics.locationStats) {
+        campaign.analytics.locationStats = {};
+      }
+      campaign.analytics.locationStats['unknown'] = 
+        (campaign.analytics.locationStats['unknown'] || 0) + 1;
+    }
+
+    // Update time stats safely
+    try {
+      const now = new Date();
+      const hour = now.getHours();
+      const day = now.getDay();
+      const month = now.getMonth();
+
+      // Initialize timeStats if not exists
+      if (!campaign.analytics.timeStats) {
+        campaign.analytics.timeStats = {
+          hourly: Array(24).fill(0),
+          daily: Array(7).fill(0),
+          monthly: Array(12).fill(0)
+        };
+      }
+
+      // Ensure each array exists and has correct length
+      if (!Array.isArray(campaign.analytics.timeStats.hourly) || 
+          campaign.analytics.timeStats.hourly.length !== 24) {
+        campaign.analytics.timeStats.hourly = Array(24).fill(0);
+      }
+      if (!Array.isArray(campaign.analytics.timeStats.daily) || 
+          campaign.analytics.timeStats.daily.length !== 7) {
+        campaign.analytics.timeStats.daily = Array(7).fill(0);
+      }
+      if (!Array.isArray(campaign.analytics.timeStats.monthly) || 
+          campaign.analytics.timeStats.monthly.length !== 12) {
+        campaign.analytics.timeStats.monthly = Array(12).fill(0);
+      }
+
+      // Safe increment of time stats
+      campaign.analytics.timeStats.hourly[hour] = 
+        (campaign.analytics.timeStats.hourly[hour] || 0) + 1;
+      campaign.analytics.timeStats.daily[day] = 
+        (campaign.analytics.timeStats.daily[day] || 0) + 1;
+      campaign.analytics.timeStats.monthly[month] = 
+        (campaign.analytics.timeStats.monthly[month] || 0) + 1;
+
+    } catch (err) {
+      console.error('Error updating time stats:', err);
+      // Initialize with default values if error occurs
+      campaign.analytics.timeStats = {
+        hourly: Array(24).fill(0),
+        daily: Array(7).fill(0),
+        monthly: Array(12).fill(0)
+      };
+    }
+
+    // Save all updates with session
+    await campaign.save({ session });
 
     // Update business analytics 📈
     let businessAnalytics = await BusinessAnalytics.findOne({ businessId: campaign.businessId });
@@ -485,7 +807,7 @@ const submitCampaignForm = async (req, res) => {
     await businessAnalytics.trackBrowser(browserInfo.browser);
 
     // Save analytics
-    await businessAnalytics.save();
+    await businessAnalytics.save({ session });
 
     // Generate claim ID 🎫
     const claimId = crypto.randomBytes(16).toString('hex');
@@ -531,12 +853,13 @@ const submitCampaignForm = async (req, res) => {
             hash: hash
           }
         }
-      }
+      },
+      { session }
     );
 
     // Track QR code generation in business analytics
     await businessAnalytics.trackQRScan();
-    await businessAnalytics.save();
+    await businessAnalytics.save({ session });
 
     // Update user's voucher claim status
     await User.updateOne(
@@ -550,8 +873,11 @@ const submitCampaignForm = async (req, res) => {
           'voucherClaims.$.qrGeneratedAt': new Date(),
           'voucherClaims.$.hash': hash
         }
-      }
+      },
+      { session }
     );
+
+    await session.commitTransaction();
 
     res.status(201).json({
       success: true,
@@ -590,12 +916,15 @@ const submitCampaignForm = async (req, res) => {
       }
     });
   } catch (error) {
+    await session.abortTransaction();
     console.error('Submit campaign form error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to submit form! 😢',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
+  } finally {
+    session.endSession();
   }
 };
 
@@ -605,6 +934,7 @@ const getCampaignAnalytics = async (req, res) => {
     const { campaignId } = req.params;
     const businessId = req.user.userId;
 
+    // Get campaign with populated data
     const campaign = await Campaign.findOne({
       _id: campaignId,
       businessId
@@ -623,76 +953,105 @@ const getCampaignAnalytics = async (req, res) => {
       businessId
     }).select('-formData.customFields');
 
-    // Initialize analytics object with safe defaults 🔄
-    const analytics = {
-      overview: {
-        totalClicks: campaign.analytics?.totalClicks || 0,
-        uniqueClicks: campaign.analytics?.uniqueClicks || 0,
-        formViews: campaign.analytics?.formViews || 0,
-        formSubmissions: campaign.analytics?.formSubmissions || 0,
-        conversionRate: campaign.analytics?.totalClicks ? 
-          ((campaign.analytics.formSubmissions / campaign.analytics.totalClicks) * 100).toFixed(2) : 
-          "0.00",
-        averageFormFillTime: campaign.analytics?.averageFormFillTime || 0
-      },
-      // Safely handle referralLinks array 🔍
-      referralLinks: (campaign.influencers || []).map(link => ({
-        code: link.referralCode || '',
-        influencerName: link.name || '',
-        platform: link.platform || '',
+    // Calculate overview metrics
+    const overview = {
+      totalClicks: campaign.analytics?.totalClicks || 0,
+      uniqueClicks: campaign.analytics?.uniqueClicks || 0,
+      formViews: campaign.analytics?.formViews || 0,
+      formSubmissions: leads.length || 0,
+      conversionRate: campaign.analytics?.totalClicks ? 
+        ((leads.length / campaign.analytics.totalClicks) * 100).toFixed(2) : "0.00",
+      averageFormFillTime: leads.reduce((acc, lead) => {
+        const fillTime = lead.analytics?.formFillTime || 0;
+        return acc + fillTime;
+      }, 0) / (leads.length || 1)
+    };
+
+    // Process referral links with proper stats
+    const referralLinks = campaign.influencers.map(link => {
+      const linkLeads = leads.filter(lead => lead.referralCode === link.referralCode);
+      return {
+        code: link.referralCode,
+        influencerName: link.name,
+        platform: link.platform,
         analytics: {
           totalClicks: link.stats?.clicks || 0,
           uniqueClicks: link.stats?.uniqueClicks || 0,
           formViews: link.stats?.formViews || 0,
-          formSubmissions: link.stats?.conversions || 0,
+          formSubmissions: linkLeads.length,
           conversionRate: link.stats?.clicks ? 
-            ((link.stats.conversions / link.stats.clicks) * 100).toFixed(2) : 
-            "0.00"
+            ((linkLeads.length / link.stats.clicks) * 100).toFixed(2) : "0.00"
         }
-      })),
-      deviceBreakdown: campaign.analytics?.deviceStats || {
-        desktop: 0,
-        mobile: 0,
-        tablet: 0
-      },
-      browserStats: campaign.analytics?.browserStats ? 
-        Object.fromEntries(campaign.analytics.browserStats) : 
-        {},
-      locationStats: campaign.analytics?.locationStats ? 
-        Object.fromEntries(campaign.analytics.locationStats) : 
-        {},
-      timeStats: campaign.analytics?.timeStats || {
-        hourly: Array(24).fill(0),
-        daily: Array(7).fill(0),
-        monthly: Array(12).fill(0)
-      },
-      // Safely handle leads array 📊
-      recentLeads: (leads || []).slice(0, 5).map(lead => ({
-        id: lead._id,
-        email: lead.formData?.email || '',
-        name: `${lead.formData?.firstName || ''} ${lead.formData?.lastName || ''}`.trim(),
-        submittedAt: lead.analytics?.submissionTimestamp || lead.createdAt,
-        referralCode: lead.referralCode || '',
-        device: lead.analytics?.deviceType || 'unknown'
-      }))
+      };
+    });
+
+    // Calculate device breakdown from leads
+    const deviceBreakdown = leads.reduce((acc, lead) => {
+      const device = lead.analytics?.deviceType?.toLowerCase() || 'unknown';
+      acc[device] = (acc[device] || 0) + 1;
+      return acc;
+    }, {
+      desktop: 0,
+      mobile: 0,
+      tablet: 0
+    });
+
+    // Calculate browser stats from leads
+    const browserStats = leads.reduce((acc, lead) => {
+      const browser = lead.analytics?.browser?.toLowerCase() || 'other';
+      acc[browser] = (acc[browser] || 0) + 1;
+      return acc;
+    }, {});
+
+    // Calculate location stats from leads
+    const locationStats = leads.reduce((acc, lead) => {
+      const location = lead.analytics?.location?.country?.toLowerCase() || 'unknown';
+      acc[location] = (acc[location] || 0) + 1;
+      return acc;
+    }, {});
+
+    // Ensure timeStats has proper structure
+    const timeStats = {
+      hourly: campaign.analytics?.timeStats?.hourly || Array(24).fill(0),
+      daily: campaign.analytics?.timeStats?.daily || Array(7).fill(0),
+      monthly: campaign.analytics?.timeStats?.monthly || Array(12).fill(0)
     };
 
-    // Add summary stats 📈
-    analytics.summary = {
+    // Format recent leads
+    const recentLeads = leads.slice(0, 5).map(lead => ({
+      id: lead._id,
+      email: lead.formData?.email || '',
+      name: `${lead.formData?.firstName || ''} ${lead.formData?.lastName || ''}`.trim(),
+      submittedAt: lead.analytics?.submissionTimestamp || lead.createdAt,
+      referralCode: lead.referralCode,
+      device: lead.analytics?.deviceType || 'unknown'
+    }));
+
+    // Calculate summary stats
+    const summary = {
       totalLeads: leads.length,
-      conversionRate: analytics.overview.conversionRate,
-      topPlatforms: analytics.referralLinks.reduce((acc, link) => {
+      conversionRate: overview.conversionRate,
+      topPlatforms: referralLinks.reduce((acc, link) => {
         if (link.platform) {
           acc[link.platform] = (acc[link.platform] || 0) + link.analytics.formSubmissions;
         }
         return acc;
       }, {}),
-      deviceDistribution: analytics.deviceBreakdown
+      deviceDistribution: deviceBreakdown
     };
 
     res.json({
       success: true,
-      data: analytics
+      data: {
+        overview,
+        referralLinks,
+        deviceBreakdown,
+        browserStats,
+        locationStats,
+        timeStats,
+        recentLeads,
+        summary
+      }
     });
   } catch (error) {
     console.error('Get campaign analytics error:', error);
