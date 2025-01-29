@@ -238,27 +238,44 @@ const uploadProfilePic = async (req, res) => {
     if (!req.file) {
       return res.status(400).json({
         success: false,
-        message: 'No file uploaded! 🚫'
+        message: 'No file uploaded! Please select an image file 🚫'
+      });
+    }
+
+    // Validate file type
+    if (!req.file.mimetype.startsWith('image/')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Only image files are allowed! 🖼️'
       });
     }
 
     // Get user ID from auth middleware
-    const userId = req.body.userId;
+    const userId = req.user.userId;
+
     // Upload to Firebase
-    const imageUrl = await uploadToFirebase(req.file, userId);
+    const imageUrl = await uploadToFirebase(req.file, `profile-pictures/${userId}`);
 
     // Update user profile with new image URL
     const updatedUser = await User.findByIdAndUpdate(
       userId,
       { picUrl: imageUrl },
       { new: true }
-    ).select('-password');
+    ).select('-password -resetPasswordToken -resetPasswordExpires -verificationToken');
+
+    if (!updatedUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found! 🔍'
+      });
+    }
 
     res.status(200).json({
       success: true,
       message: 'Profile picture uploaded successfully! 🎉',
       data: {
-        user: updatedUser
+        user: updatedUser,
+        imageUrl: imageUrl
       }
     });
   } catch (error) {
@@ -266,7 +283,7 @@ const uploadProfilePic = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to upload profile picture! 😢',
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };

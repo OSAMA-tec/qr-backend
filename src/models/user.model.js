@@ -31,7 +31,7 @@ const userSchema = new mongoose.Schema({
     description: String,
     claimedFrom: {
       type: String,
-      enum: ['widget', 'popup', 'qr', 'campaign']
+      enum: ['widget', 'popup', 'qr', 'campaign','referral', 'influencer', 'partner', 'google_ads', 'agency', 'business']
     },
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -40,7 +40,7 @@ const userSchema = new mongoose.Schema({
     source: {
       type: {
         type: String,
-        enum: ['campaign', 'widget', 'popup', 'qr']
+        enum: ['campaign', 'widget', 'popup', 'qr','influencer', 'partner', 'google_ads', 'agency', 'business']
       },
       campaignId: {
         type: mongoose.Schema.Types.ObjectId,

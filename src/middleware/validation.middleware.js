@@ -1004,12 +1004,6 @@ const userRegistrationValidation = [
         throw new Error(error.message || 'Invalid date of birth! 📅');
       }
     }),
-
-  body('gender')
-    .notEmpty().withMessage('Gender is required! 👥')
-    .isIn(['male', 'female', 'other', 'prefer_not_to_say'])
-    .withMessage('Invalid gender selection'),
-
   handleValidationErrors
 ];
 

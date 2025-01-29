@@ -389,27 +389,104 @@ const submitCampaignForm = async (req, res) => {
     const userAgent = req.headers['user-agent'];
     const ipAddress = req.ip;
 
-    // Find campaign and get influencer info 🎯
+    // Find campaign based on campaign type and referral code 🎯
     const campaign = await Campaign.findOne({
       _id: campaignId,
-      'influencers.referralCode': referralCode,
+      $or: [
+        { 'influencers.referralCode': referralCode },
+        { 'googleAdsDetails.referralCode': referralCode },
+        { 'agencyDetails.referralCode': referralCode },
+        { 'businessDetails.referralCode': referralCode }
+      ]
     }).populate('voucherId');
 
     if (!campaign) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(404).json({
         success: false,
         message: 'Campaign not found or inactive! 🚫'
       });
     }
 
-    // Get influencer details 👤
-    const influencer = campaign.influencers.find(inf => inf.referralCode === referralCode);
-    
-    if (!influencer) {
-      return res.status(404).json({
-        success: false,
-        message: 'Invalid referral code! 🚫'
-      });
+    // Get source details based on campaign type 🔍
+    let sourceDetails = null;
+    let sourceType = campaign.type;
+
+    switch (campaign.type) {
+      case 'influencer':
+        const influencer = campaign.influencers.find(inf => inf.referralCode === referralCode);
+        if (!influencer) {
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(404).json({
+            success: false,
+            message: 'Invalid referral code! 🚫'
+          });
+        }
+        sourceDetails = {
+          type: 'influencer',
+          id: influencer._id,
+          name: influencer.name,
+          platform: influencer.platform
+        };
+        // Update influencer stats
+        const influencerIndex = campaign.influencers.findIndex(inf => inf.referralCode === referralCode);
+        campaign.influencers[influencerIndex].stats.conversions++;
+        break;
+
+      case 'google_ads':
+        if (campaign.googleAdsDetails.referralCode !== referralCode) {
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(404).json({
+            success: false,
+            message: 'Invalid referral code! 🚫'
+          });
+        }
+        sourceDetails = {
+          type: 'google_ads',
+          adsId: campaign.googleAdsDetails.adsId
+        };
+        // Update Google Ads stats
+        campaign.googleAdsDetails.stats.conversions++;
+        break;
+
+      case 'agency':
+        if (campaign.agencyDetails.referralCode !== referralCode) {
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(404).json({
+            success: false,
+            message: 'Invalid referral code! 🚫'
+          });
+        }
+        sourceDetails = {
+          type: 'agency',
+          name: campaign.agencyDetails.name,
+          contactPerson: campaign.agencyDetails.contactPerson
+        };
+        // Update Agency stats
+        campaign.agencyDetails.stats.conversions++;
+        break;
+
+      case 'business':
+        if (campaign.businessDetails.referralCode !== referralCode) {
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(404).json({
+            success: false,
+            message: 'Invalid referral code! 🚫'
+          });
+        }
+        sourceDetails = {
+          type: 'business',
+          name: campaign.businessDetails.name,
+          contactPerson: campaign.businessDetails.contactPerson
+        };
+        // Update Business stats
+        campaign.businessDetails.stats.conversions++;
+        break;
     }
 
     // Check if email already exists
@@ -419,141 +496,14 @@ const submitCampaignForm = async (req, res) => {
     });
 
     if (existingLead) {
+      await session.abortTransaction();
+      session.endSession();
       return res.status(400).json({
         success: false,
         message: 'You have already submitted this form! 📝'
       });
     }
 
-    // Get device and location info 📱
-    const deviceInfo = detectDevice(userAgent);
-    const browserInfo = parseUserAgent(userAgent);
-    const location = await getLocationFromIP(ipAddress);
-
-    // Track form submission analytics
-    campaign.trackFormSubmission(
-      deviceInfo, 
-      browserInfo, 
-      location,
-      req.body.formFillTime
-    );
-
-    // Create or update user with campaign source info 👤
-    let user = await User.findOne({ email: formData.email });
-    const isNewUser = !user;
-
-    if (!user) {
-      user = new User({
-        email: formData.email,
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        phoneNumber: formData.phoneNumber,
-        dateOfBirth: formData.dateOfBirth,
-        role: 'customer',
-        isGuest: true,
-        guestDetails: {
-          description: `Joined via ${campaign.name} campaign`,
-          claimedFrom: 'campaign',
-          businessId: campaign.businessId,
-          source: {
-            type: 'campaign',
-            campaignId: campaign._id,
-            campaignName: campaign.name,
-            influencerId: influencer._id,
-            influencerName: influencer.name,
-            influencerPlatform: influencer.platform,
-            referralCode: referralCode,
-            joinedAt: new Date()
-          }
-        },
-        voucherClaims: [{
-          voucherId: campaign.voucherId._id,
-          businessId: campaign.businessId,
-          claimMethod: 'link',
-          expiryDate: campaign.voucherId.endDate,
-          analytics: {
-            clickDate: new Date(),
-            viewDate: new Date(),
-            source: {
-              type: 'campaign',
-              campaignId: campaign._id,
-              influencerId: influencer._id,
-              referralCode: referralCode
-            }
-          }
-        }]
-      });
-      await user.save({ session });
-    } else {
-      const existingClaim = user.voucherClaims?.find(
-        claim => claim.voucherId.toString() === campaign.voucherId._id.toString()
-      );
-
-      if (!existingClaim) {
-        await User.updateOne(
-          { _id: user._id },
-          {
-            $push: {
-              voucherClaims: {
-                voucherId: campaign.voucherId._id,
-                businessId: campaign.businessId,
-                claimMethod: 'link',
-                expiryDate: campaign.voucherId.endDate,
-                analytics: {
-                  clickDate: new Date(),
-                  viewDate: new Date(),
-                  source: {
-                    type: 'campaign',
-                    campaignId: campaign._id,
-                    influencerId: influencer._id,
-                    referralCode: referralCode
-                  }
-                }
-              }
-            }
-          },
-          { session }
-        );
-      }
-    }
-
-    // Create lead with enhanced tracking 📊
-    const lead = new CampaignLead({
-      campaignId,
-      referralCode,
-      businessId: campaign.businessId,
-      userId: user._id,
-      formData,
-      influencerDetails: {
-        id: influencer._id,
-        name: influencer.name,
-        platform: influencer.platform,
-        type: influencer.type
-      },
-      analytics: {
-        deviceType: deviceInfo.type,
-        browser: browserInfo.browser,
-        os: browserInfo.os,
-        ipAddress,
-        location,
-        referrer: req.headers.referer,
-        formFillTime: req.body.formFillTime,
-        clickTimestamp: req.body.clickTimestamp,
-        formViewTimestamp: req.body.formViewTimestamp,
-        submissionTimestamp: new Date()
-      }
-    });
-
-    await lead.save({ session });
-
-    // Update influencer stats 📈
-    const influencerIndex = campaign.influencers.findIndex(inf => inf.referralCode === referralCode);
-    campaign.influencers[influencerIndex].stats = {
-      clicks: campaign.influencers[influencerIndex].stats?.clicks || 0,
-      conversions: (campaign.influencers[influencerIndex].stats?.conversions || 0) + 1,
-      revenue: campaign.influencers[influencerIndex].stats?.revenue || 0
-    };
-    
     // Initialize analytics if not exists
     if (!campaign.analytics) {
       campaign.analytics = {
@@ -593,14 +543,27 @@ const submitCampaignForm = async (req, res) => {
         tablet: 0
       };
     }
-    
+
+    // Get device and location info 📱
+    const deviceInfo = detectDevice(userAgent);
+    const browserInfo = parseUserAgent(userAgent);
+    const location = await getLocationFromIP(ipAddress);
+
+    // Track form submission analytics with enhanced tracking
+    campaign.trackFormSubmission(
+      deviceInfo, 
+      browserInfo, 
+      location,
+      req.body.formFillTime
+    );
+
     // Update campaign analytics 📊
     campaign.analytics.formSubmissions++;
     campaign.analytics.conversions++;
     
     // Calculate conversion rate
     if (campaign.analytics.totalClicks > 0) {
-    campaign.analytics.conversionRate = 
+      campaign.analytics.conversionRate = 
         (campaign.analytics.conversions / campaign.analytics.totalClicks) * 100;
     }
 
@@ -714,13 +677,139 @@ const submitCampaignForm = async (req, res) => {
       };
     }
 
+    // Create or update user with campaign source info 👤
+    let user = await User.findOne({ email: formData.email });
+    const isNewUser = !user;
+
+    if (!user) {
+      user = new User({
+        email: formData.email,
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        phoneNumber: formData.phoneNumber,
+        dateOfBirth: formData.dateOfBirth,
+        role: 'customer',
+        isGuest: true,
+        guestDetails: {
+          description: `Joined via ${campaign.name} campaign`,
+          claimedFrom: 'campaign',
+          businessId: campaign.businessId,
+          source: {
+            type: campaign.type,
+            campaignId: campaign._id,
+            campaignName: campaign.name,
+            ...sourceDetails,
+            referralCode: referralCode,
+            joinedAt: new Date()
+          }
+        },
+        voucherClaims: [{
+          voucherId: campaign.voucherId._id,
+          businessId: campaign.businessId,
+          claimMethod: 'link',
+          expiryDate: campaign.voucherId.endDate,
+          analytics: {
+            clickDate: new Date(),
+            viewDate: new Date(),
+            source: {
+              type: campaign.type,
+              campaignId: campaign._id,
+              ...sourceDetails,
+              referralCode: referralCode
+            }
+          }
+        }]
+      });
+      await user.save({ session });
+    } else {
+      const existingClaim = user.voucherClaims?.find(
+        claim => claim.voucherId.toString() === campaign.voucherId._id.toString()
+      );
+
+      if (!existingClaim) {
+        await User.updateOne(
+          { _id: user._id },
+          {
+            $push: {
+              voucherClaims: {
+                voucherId: campaign.voucherId._id,
+                businessId: campaign.businessId,
+                claimMethod: 'link',
+                expiryDate: campaign.voucherId.endDate,
+                analytics: {
+                  clickDate: new Date(),
+                  viewDate: new Date(),
+                  source: {
+                    type: campaign.type,
+                    campaignId: campaign._id,
+                    ...sourceDetails,
+                    referralCode: referralCode
+                  }
+                }
+              }
+            }
+          },
+          { session }
+        );
+      }
+    }
+
+    // Create lead with enhanced tracking 📊
+    const lead = new CampaignLead({
+      campaignId,
+      referralCode,
+      businessId: campaign.businessId,
+      userId: user._id,
+      formData,
+      sourceDetails: {
+        type: campaign.type,
+        ...sourceDetails
+      },
+      analytics: {
+        deviceType: deviceInfo.type,
+        browser: browserInfo.browser,
+        os: browserInfo.os,
+        ipAddress,
+        location,
+        referrer: req.headers.referer,
+        formFillTime: req.body.formFillTime,
+        clickTimestamp: req.body.clickTimestamp,
+        formViewTimestamp: req.body.formViewTimestamp,
+        submissionTimestamp: new Date()
+      }
+    });
+
+    await lead.save({ session });
+
+    // Update campaign stats based on type 📈
+    switch (campaign.type) {
+      case 'google_ads':
+        campaign.googleAdsDetails.stats.revenue = 
+          (campaign.googleAdsDetails.stats.revenue || 0) + (campaign.voucherId.discountValue || 0);
+        break;
+      case 'agency':
+        campaign.agencyDetails.stats.revenue = 
+          (campaign.agencyDetails.stats.revenue || 0) + (campaign.voucherId.discountValue || 0);
+        break;
+      case 'business':
+        campaign.businessDetails.stats.revenue = 
+          (campaign.businessDetails.stats.revenue || 0) + (campaign.voucherId.discountValue || 0);
+        break;
+      case 'influencer':
+        const influencerIndex = campaign.influencers.findIndex(inf => inf.referralCode === referralCode);
+        if (influencerIndex !== -1) {
+          campaign.influencers[influencerIndex].stats.revenue = 
+            (campaign.influencers[influencerIndex].stats.revenue || 0) + (campaign.voucherId.discountValue || 0);
+        }
+        break;
+    }
+
     // Save all updates with session
     await campaign.save({ session });
 
     // Update business analytics 📈
     let businessAnalytics = await BusinessAnalytics.findOne({ businessId: campaign.businessId });
     
-    // Create analytics record if it doesn't exist
     if (!businessAnalytics) {
       businessAnalytics = new BusinessAnalytics({ businessId: campaign.businessId });
     }
@@ -729,7 +818,7 @@ const submitCampaignForm = async (req, res) => {
     if (isNewUser) {
       await businessAnalytics.trackNewCustomer(true);
     }
-    await businessAnalytics.trackSource('campaign');
+    await businessAnalytics.trackSource(campaign.type);
     await businessAnalytics.trackDevice(deviceInfo.type);
     await businessAnalytics.trackBrowser(browserInfo.browser);
 
@@ -805,6 +894,7 @@ const submitCampaignForm = async (req, res) => {
     );
 
     await session.commitTransaction();
+    session.endSession();
 
     res.status(201).json({
       success: true,
@@ -814,11 +904,7 @@ const submitCampaignForm = async (req, res) => {
         userId: user._id,
         campaign: {
           id: campaign._id,
-          name: campaign.name,
-          influencer: {
-            name: influencer.name,
-            platform: influencer.platform
-          }
+          name: campaign.name
         },
         voucher: {
           id: campaign.voucherId._id,
@@ -843,15 +929,16 @@ const submitCampaignForm = async (req, res) => {
       }
     });
   } catch (error) {
-    await session.abortTransaction();
     console.error('Submit campaign form error:', error);
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
+    session.endSession();
     res.status(500).json({
       success: false,
       message: 'Failed to submit form! 😢',
       error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
-  } finally {
-    session.endSession();
   }
 };
 
