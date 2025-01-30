@@ -138,7 +138,11 @@ const couponSchema = new mongoose.Schema({
       type: Date,
       default: Date.now
     }
-  }]
+  }],
+  marketplace: {
+    type: Boolean,
+    default: false
+  }
 }, {
   timestamps: true
 });

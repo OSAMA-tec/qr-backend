@@ -10,7 +10,8 @@ const {
   validateVoucher,
   redeemVoucher,
   getClaimedVoucherUsers,
-  scanVoucher
+  scanVoucher,
+  toggleMarketplaceStatus
 } = require('../controllers/voucher.controller');
 
 const {
@@ -56,5 +57,6 @@ router.put('/:id', voucherUpdateValidation, updateVoucher); //tt
 router.delete('/:id', deleteVoucher); //tt
 router.post('/:id/activate', toggleVoucherStatus); //tt
 router.post('/:id/deactivate', toggleVoucherStatus); //tt
+router.put('/:id/marketplace', toggleMarketplaceStatus); //tt
 
 module.exports = router; 

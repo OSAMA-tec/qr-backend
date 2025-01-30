@@ -168,7 +168,7 @@ const userSchema = new mongoose.Schema({
     },
     claimMethod: {
       type: String,
-      enum: ['popup', 'qr', 'link'],
+      enum: ['popup', 'qr', 'link','marketplace'],
       required: true
     },
     status: {

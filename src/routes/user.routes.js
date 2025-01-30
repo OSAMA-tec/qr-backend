@@ -32,16 +32,16 @@ const upload = multer({
   }
 });
 
-const isAdminMiddleware = (req, res, next) => {
-  console.log(req.user)
-  if (req.user.role !== 'admin') {
-    return res.status(403).json({
-      success: false,
-      message: 'Access denied! Only admins can access this resource 🚫'
-    });
-  }
-  next();
-};
+// const isAdminMiddleware = (req, res, next) => {
+//   console.log(req.user)
+//   if (req.user.role !== 'admin') {
+//     return res.status(403).json({
+//       success: false,
+//       message: 'Access denied! Only admins can access this resource 🚫'
+//     });
+//   }
+//   next();
+// };
 
 // Admin routes 👑
 router.get('/customers', authMiddleware, getAllCustomers);

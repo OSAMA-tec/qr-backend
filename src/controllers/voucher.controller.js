@@ -1015,6 +1015,39 @@ const scanVoucher = async (req, res) => {
   }
 };
 
+// Add this new controller function
+const toggleMarketplaceStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const businessId = req.user.userId;
+
+    const voucher = await Coupon.findOneAndUpdate(
+      { _id: id, businessId },
+      { $set: { marketplace: req.body.status } },
+      { new: true, runValidators: true }
+    );
+
+    if (!voucher) {
+      return res.status(404).json({
+        success: false,
+        message: 'Voucher not found! 🔍'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: `Marketplace status updated to ${voucher.marketplace ? 'active' : 'inactive'} ✅`,
+      data: voucher
+    });
+  } catch (error) {
+    console.error('Toggle marketplace error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update marketplace status 😢'
+    });
+  }
+};
+
 module.exports = {
   createVoucher,
   listVouchers,
@@ -1025,5 +1058,6 @@ module.exports = {
   validateVoucher,
   redeemVoucher,
   getClaimedVoucherUsers,
-  scanVoucher
+  scanVoucher,
+  toggleMarketplaceStatus
 }; 
