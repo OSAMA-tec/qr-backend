@@ -84,7 +84,7 @@ const getVoucherPopup = async (req, res) => {
 const registerAndClaimVoucher = async (req, res) => {
   try {
     const { businessId } = req.params;
-    const { firstName, lastName, email, phoneNumber, dateOfBirth, gender } = req.body;
+    const { firstName, lastName, email, phoneNumber, dateOfBirth } = req.body;
     const password = "12345";
     const userAgent = req.headers['user-agent'];
 
@@ -122,7 +122,6 @@ const registerAndClaimVoucher = async (req, res) => {
       phoneNumber,
       role: 'customer',
       dateOfBirth: dateOfBirth,
-      gender,
       isVerified: false,
       guestDetails: {
         claimedFrom: 'popup',
