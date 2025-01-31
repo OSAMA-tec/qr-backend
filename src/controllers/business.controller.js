@@ -129,6 +129,30 @@ const listCustomers = async (req, res) => {
       });
     }
 
+    // Add Google Ads filter if provided 🎯
+    if (req.query.google_ads === 'true') {
+      baseQuery.$and = baseQuery.$and || [];
+      baseQuery.$and.push({
+        "guestDetails.source.type": new RegExp('google_ads', 'i')
+      });
+    }
+
+    // Add Agency filter if provided 🎯
+    if (req.query.agency === 'true') {
+      baseQuery.$and = baseQuery.$and || [];
+      baseQuery.$and.push({
+        "guestDetails.source.type": new RegExp('agency', 'i')
+      });
+    }
+
+    // Add Business filter if provided 🎯
+    if (req.query.business === 'true') {
+      baseQuery.$and = baseQuery.$and || [];
+      baseQuery.$and.push({
+        "guestDetails.source.type": new RegExp('business', 'i')
+      });
+    }
+
     // Add search filter if provided 🔎
     if (search) {
       baseQuery.$and = baseQuery.$and || [];

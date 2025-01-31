@@ -208,7 +208,23 @@ const listVouchers = async (req, res) => {
         remainingUses: voucher.usageLimit?.perCoupon 
           ? voucher.usageLimit.perCoupon - voucher.currentUsage 
           : 'unlimited',
-        analytics: voucher.analytics
+        analytics: voucher.analytics,
+        // Add marketplace analytics 🏪
+        marketplaceAnalytics: {
+          clicks: voucher.analytics?.marketplace?.clicks || 0,
+          submissions: voucher.analytics?.marketplace?.submissions || 0,
+          conversions: voucher.analytics?.marketplace?.conversions || 0,
+          conversionRate: voucher.analytics?.marketplace?.submissions 
+            ? ((voucher.analytics.marketplace.conversions / voucher.analytics.marketplace.submissions) * 100).toFixed(2) 
+            : 0,
+          demographics: {
+            under18: voucher.analytics?.marketplace?.ageDemographics?.under18 || 0,
+            eighteenTo25: voucher.analytics?.marketplace?.ageDemographics?.eighteenTo25 || 0,
+            twenty6To35: voucher.analytics?.marketplace?.ageDemographics?.twenty6To35 || 0,
+            thirty6To50: voucher.analytics?.marketplace?.ageDemographics?.thirty6To50 || 0,
+            over50: voucher.analytics?.marketplace?.ageDemographics?.over50 || 0
+          }
+        }
       };
 
       return {
