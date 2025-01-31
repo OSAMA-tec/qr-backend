@@ -9,8 +9,10 @@ const authMiddleware = require('../middleware/auth.middleware');
 // Public marketplace routes
 router.get('/', getMarketplaceVouchers);
 
-// Protected customer routes 🔒
+// Public customer routes 🔒
+router.post('/:voucherId/claim', 
+  claimMarketplaceVoucher
+);
 router.use(authMiddleware);
-router.post('/:voucherId/claim', claimMarketplaceVoucher);
 
 module.exports = router; 

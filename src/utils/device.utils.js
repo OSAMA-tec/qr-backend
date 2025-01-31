@@ -1,4 +1,5 @@
 // Device detection utilities 📱
+const axios = require('axios');
 
 /**
  * Detect device type from user agent 
@@ -71,7 +72,49 @@ const parseUserAgent = (userAgent) => {
   };
 };
 
+/**
+ * Get location info from IP address
+ * @param {string} ip - IP address
+ * @returns {Object} Location info
+ */
+const getLocationFromIP = async (ip) => {
+  try {
+    // Remove any 'ffff:' prefix and localhost IPs
+    const cleanIP = ip.replace('::ffff:', '');
+    if (cleanIP === '127.0.0.1' || cleanIP === 'localhost') {
+      return {
+        country: 'Unknown',
+        city: 'Unknown',
+        region: 'Unknown',
+        timezone: 'Unknown'
+      };
+    }
+
+    // Use ipapi.co free service for IP geolocation
+    const response = await axios.get(`https://ipapi.co/${cleanIP}/json/`);
+    
+    return {
+      country: response.data.country_name || 'Unknown',
+      city: response.data.city || 'Unknown',
+      region: response.data.region || 'Unknown',
+      timezone: response.data.timezone || 'Unknown',
+      latitude: response.data.latitude,
+      longitude: response.data.longitude
+    };
+  } catch (error) {
+    console.error('IP location detection error:', error);
+    // Return default values if location detection fails
+    return {
+      country: 'Unknown',
+      city: 'Unknown',
+      region: 'Unknown',
+      timezone: 'Unknown'
+    };
+  }
+};
+
 module.exports = {
   detectDevice,
-  parseUserAgent
+  parseUserAgent,
+  getLocationFromIP
 }; 

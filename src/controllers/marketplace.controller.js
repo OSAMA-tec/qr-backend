@@ -3,6 +3,23 @@ const Coupon = require("../models/coupon.model");
 const User = require("../models/user.model");
 const crypto = require("crypto");
 const QRCode = require("qrcode");
+const mongoose = require("mongoose");
+const { detectDevice, getLocationFromIP } = require("../utils/device.utils");
+const BusinessAnalytics = require("../models/businessAnalytics.model");
+
+// Add this helper function at the top with other imports
+const calculateAge = (birthDate) => {
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDiff = today.getMonth() - birthDate.getMonth();
+  
+  // Adjust age if birthday hasn't occurred this year
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  
+  return age;
+};
 
 // Get all marketplace vouchers 📋
 const getMarketplaceVouchers = async (req, res) => {
@@ -63,6 +80,14 @@ const getMarketplaceVouchers = async (req, res) => {
       return voucherObj;
     });
 
+    // Track clicks for all returned vouchers
+    const voucherIds = processedVouchers.map(v => v._id);
+    
+    await Coupon.updateMany(
+      { _id: { $in: voucherIds } },
+      { $inc: { 'analytics.marketplace.clicks': 1 } }
+    );
+
     res.json({
       success: true,
       data: {
@@ -84,121 +109,207 @@ const getMarketplaceVouchers = async (req, res) => {
 };
 
 // Claim marketplace voucher and generate QR 🎟️
-const claimMarketplaceVoucher = async (req, res) => {
+const submitMarketplaceClaim = async (req, res) => {
+  let session;
   try {
-    const { voucherId } = req.params;
-    const userId = req.user.userId;
+    session = await mongoose.startSession();
+    
+    // Store transaction result
+    const result = await session.withTransaction(async () => {
+      const { voucherId } = req.params;
+      const { firstName, lastName, email, phoneNumber, dateOfBirth, password } = req.body;
+      const userAgent = req.headers['user-agent'];
+      const ipAddress = req.ip;
 
-    // Get voucher and user
-    const [voucher, user] = await Promise.all([
-      Coupon.findOne({
-        _id: voucherId,
-        marketplace: true,
-        isActive: true,
-      }),
-      User.findById(userId),
-    ]);
+      // Validate required fields
+      if (!firstName || !lastName || !email || !phoneNumber || !dateOfBirth || !password) {
+        throw new Error('All fields are required');
+      }
 
-    if (!voucher) {
-      return res.status(404).json({
-        success: false,
-        message: "Voucher not available in marketplace 🚫",
+      // Get voucher and check existing user
+      const [voucher, existingUser] = await Promise.all([
+        Coupon.findOne({
+          _id: voucherId,
+          marketplace: true,
+          isActive: true
+        }).session(session),
+        User.findOne({ email }).session(session)
+      ]);
+
+      if (!voucher) {
+        throw new Error('Voucher not available');
+      }
+
+      // Check if email already registered
+      if (existingUser) {
+        throw new Error('Email already registered! Please login to claim voucher 📧');
+      }
+
+      // Create verification token for email verification
+      const verificationToken = crypto.randomBytes(32).toString('hex');
+
+      // Create new user with proper password handling
+      const user = new User({
+        firstName,
+        lastName,
+        email,
+        password,
+        phoneNumber,
+        dateOfBirth,
+        role: 'customer',
+        isGuest: true,
+        isVerified: true,
+        verificationToken,
+        guestDetails: {
+          claimedFrom: 'marketplace',
+          businessId: voucher.businessId
+        }
       });
-    }
 
-    // Check if already claimed
-    const existingClaim = user.voucherClaims.find(
-      (claim) =>
-        claim.voucherId.equals(voucherId) &&
-        claim.businessId.equals(voucher.businessId)
-    );
+      // Save user
+      await user.save({ session });
 
-    if (existingClaim) {
-      return res.status(400).json({
-        success: false,
-        message: "Voucher already claimed 🔄",
+      // Age demographic calculation
+      const age = calculateAge(new Date(dateOfBirth));
+      let ageGroup = 'over50';
+      if (age < 18) ageGroup = 'under18';
+      else if (age <= 25) ageGroup = 'eighteenTo25';
+      else if (age <= 35) ageGroup = 'twenty6To35';
+      else if (age <= 50) ageGroup = 'thirty6To50';
+
+      // Update voucher analytics
+      await Coupon.findOneAndUpdate(
+        { _id: voucherId },
+        {
+          $inc: { 
+            'analytics.marketplace.submissions': 1,
+            'analytics.marketplace.conversions': 1,
+            [`analytics.marketplace.ageDemographics.${ageGroup}`]: 1
+          }
+        },
+        { session }
+      );
+
+      // Generate QR data
+      const claimId = crypto.randomBytes(16).toString('hex');
+      const qrData = {
+        claimId,
+        voucherId: voucher._id,
+        code: voucher.code,
+        businessId: voucher.businessId,
+        userId: user._id,
+        type: 'claimed_voucher',
+        timestamp: new Date(),
+        expiryDate: voucher.endDate
+      };
+
+      // Generate security hash
+      const hash = crypto.createHash('sha256')
+        .update(JSON.stringify(qrData))
+        .digest('hex');
+      qrData.hash = hash;
+
+      // Generate QR code
+      const qrCode = await QRCode.toDataURL(JSON.stringify(qrData));
+
+      // Add claim to user
+      user.voucherClaims.push({
+        voucherId: voucher._id,
+        businessId: voucher.businessId,
+        claimMethod: 'marketplace',
+        claimDate: new Date(),
+        expiryDate: voucher.endDate,
+        status: 'claimed',
+        analytics: {
+          clickDate: new Date(),
+          viewDate: new Date()
+        },
+        qrCodeData: qrData
       });
-    }
 
-    // Create claim data
-    const claimId = crypto.randomBytes(16).toString("hex");
-    const qrData = {
-      claimId,
-      voucherId: voucher._id,
-      code: voucher.code,
-      businessId: voucher.businessId,
-      userId: user._id,
-      type: "claimed_voucher",
-      timestamp: new Date(),
-      expiryDate: voucher.endDate,
-    };
+      await user.save({ session });
 
-    // Generate security hash 🔒
-    const hash = crypto
-      .createHash("sha256")
-      .update(JSON.stringify(qrData))
-      .digest("hex");
-    qrData.hash = hash;
+      // Track device and location
+      const deviceInfo = detectDevice(userAgent);
+      let location = {
+        country: 'Unknown',
+        city: 'Unknown',
+        region: 'Unknown',
+        timezone: 'Unknown'
+      };
 
-    // Generate QR code 📱
-    const qrCode = await QRCode.toDataURL(JSON.stringify(qrData));
+      try {
+        location = await getLocationFromIP(ipAddress);
+      } catch (error) {
+        console.error('Location detection failed:', error);
+        // Continue with default location values
+      }
+      
+      // Update business analytics
+      await BusinessAnalytics.findOneAndUpdate(
+        { businessId: voucher.businessId },
+        {
+          $inc: {
+            'marketplace.submissions': 1,
+            'marketplace.conversions': 1,
+            [`demographics.age.${ageGroup}`]: 1
+          },
+          $set: {
+            'marketplace.lastClaim': new Date(),
+            'marketplace.lastLocation': location
+          }
+        },
+        { upsert: true, session }
+      );
 
-    // Update user claims
-    user.voucherClaims.push({
-      voucherId: voucher._id,
-      businessId: voucher.businessId,
-      claimMethod: "marketplace",
-      claimDate: new Date(),
-      expiryDate: voucher.endDate,
-      status: "claimed",
-      analytics: {
-        clickDate: new Date(),
-        viewDate: new Date(),
-      },
-      qrCodeData: qrData,
+      // Return all the data needed for response
+      return {
+        user,
+        voucher,
+        qrCode,
+        claimId,
+        firstName,
+        lastName
+      };
     });
 
-    await user.save();
-    // Update voucher analytics 📊
-    await Coupon.updateOne(
-      { _id: voucherId },
-      {
-        $inc: {
-          "analytics.redemptions": 1,
-          "analytics.qrCodeGenerations": 1,
-          currentUsage: 1,
-        },
-        $push: {
-          qrHistory: {
-            userId: user._id,
-            generatedAt: new Date(),
-            hash: hash,
-          },
-        },
-      }
-    );
+    // Now use the result to send response
+    if (!result) {
+      throw new Error('Transaction failed');
+    }
+
+    // Send success response outside transaction using result data
     res.json({
       success: true,
+      message: 'Voucher claimed successfully! You can now login with your email and password 🎉',
       data: {
-        claimId,
-        qrCode,
-        voucher: {
-          id: voucher._id,
-          title: voucher.title,
-          expiry: voucher.endDate,
-        },
-      },
+        qrCode: result.qrCode,
+        claimDetails: {
+          id: result.claimId,
+          expiry: result.voucher.endDate,
+          user: {
+            id: result.user._id,
+            name: `${result.firstName} ${result.lastName}`,
+            email: result.user.email
+          }
+        }
+      }
     });
+
   } catch (error) {
-    console.error("Claim marketplace voucher error:", error);
+    console.error('Marketplace claim error:', error);
     res.status(500).json({
       success: false,
-      message: "Failed to claim voucher 😢",
+      message: error.message || 'Claim failed! Please try again 😢'
     });
+  } finally {
+    if (session) {
+      session.endSession();
+    }
   }
 };
 
 module.exports = {
   getMarketplaceVouchers,
-  claimMarketplaceVoucher,
+  claimMarketplaceVoucher: submitMarketplaceClaim
 };

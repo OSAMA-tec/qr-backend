@@ -110,7 +110,19 @@ const couponSchema = new mongoose.Schema({
     views: { type: Number, default: 0 },
     clicks: { type: Number, default: 0 },
     redemptions: { type: Number, default: 0 },
-    totalRevenue: { type: Number, default: 0 }
+    totalRevenue: { type: Number, default: 0 },
+    marketplace: {
+      clicks: { type: Number, default: 0 },
+      submissions: { type: Number, default: 0 },
+      conversions: { type: Number, default: 0 },
+      ageDemographics: {
+        under18: { type: Number, default: 0 },
+        eighteenTo25: { type: Number, default: 0 },
+        twenty6To35: { type: Number, default: 0 },
+        thirty6To50: { type: Number, default: 0 },
+        over50: { type: Number, default: 0 }
+      }
+    }
   },
   // Question and Answers for Voucher 📝
   question: {

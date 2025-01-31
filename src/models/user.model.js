@@ -14,9 +14,6 @@ const userSchema = new mongoose.Schema({
   },
   password: {
     type: String,
-    required: function() {
-      return !this.isGuest; // Password only required for non-guest users
-    }
   },
   role: {
     type: String,
@@ -31,7 +28,7 @@ const userSchema = new mongoose.Schema({
     description: String,
     claimedFrom: {
       type: String,
-      enum: ['widget', 'popup', 'qr', 'campaign','referral', 'influencer', 'partner', 'google_ads', 'agency', 'business']
+      enum: ['widget', 'popup', 'qr', 'campaign','referral', 'influencer', 'partner', 'google_ads', 'agency', 'business','marketplace']
     },
     businessId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -128,7 +125,13 @@ const userSchema = new mongoose.Schema({
   },
 
   // Account Status
-  isVerified: { type: Boolean, default: false },
+  isVerified: { 
+    type: Boolean, 
+    default: function() {
+      // Auto-verify marketplace signups
+      return this.guestDetails?.claimedFrom === 'marketplace' ? true : false;
+    }
+  },
   isActive: { type: Boolean, default: true },
   lastLogin: { type: Date },
   verificationToken: String,
