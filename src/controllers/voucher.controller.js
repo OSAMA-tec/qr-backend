@@ -500,7 +500,6 @@ const redeemVoucher = async (req, res) => {
     const voucher = await Coupon.findOne({
       _id: voucherId,
       businessId,
-      isActive: true
     });
 
     if (!voucher) {
@@ -919,7 +918,7 @@ const scanVoucher = async (req, res) => {
         message: 'This voucher is not valid for your business! 🏢'
       });
     }
-
+    console.log(voucherData.code)
     // Find and validate voucher 🔍
     const voucher = await Coupon.findOne({
       code: voucherData.code,
