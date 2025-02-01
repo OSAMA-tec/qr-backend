@@ -16,7 +16,7 @@ const getVoucherPopup = async (req, res) => {
     // Find active voucher with widget template
     const voucher = await Coupon.findOne({
       businessId,
-      isActive: true,
+      // isActive: true,
       usedTrue: true,
       // startDate: { $lte: new Date() },
       // endDate: { $gte: new Date() }

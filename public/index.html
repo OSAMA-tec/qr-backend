@@ -123,31 +123,57 @@
         .btn-claim:hover::after {
             transform: translateY(0);
         }
+
+        .popup-card {
+            background: #1C1E26;
+            color: white;
+        }
+
+        .btn-claim {
+            background: #E7B355;
+            color: #1C1E26;
+            transition: all 0.3s ease;
+        }
+
+        .btn-claim:hover {
+            background: #d4a34c;
+            transform: translateY(-2px);
+        }
     </style>
 </head>
 <body>
     <!-- 🎫 Voucher Card -->
-    <div class="popup-card bg-white rounded-xl max-w-sm w-full relative hover-scale" id="voucherCard">
+    <div class="popup-card bg-[#1C1E26] rounded-xl max-w-sm w-full relative hover-scale" id="voucherCard">
         <!-- ❌ Close Button -->
         <button onclick="closePopup()" 
                 class="absolute -top-3 -right-3 bg-white rounded-full p-2 shadow-lg hover:scale-110 transition-all duration-300 z-10 group">
-            <i class="mdi mdi-close text-xl group-hover:rotate-90 transition-transform duration-300"></i>
+            <i class="mdi mdi-close text-xl group-hover:rotate-90 transition-transform"></i>
         </button>
 
         <!-- 🎨 Card Content -->
         <div class="p-8 space-y-6" id="cardContent">
-            <!-- Loading Skeleton -->
-            <div class="animate-pulse space-y-6">
-                <div class="h-8 bg-gray-200 rounded-lg w-3/4 shimmer"></div>
-                <div class="space-y-2">
-                    <div class="h-4 bg-gray-200 rounded w-full shimmer"></div>
-                    <div class="h-4 bg-gray-200 rounded w-5/6 shimmer"></div>
-                </div>
-                <div class="flex justify-center">
-                    <div class="h-16 bg-gray-200 rounded-full w-2/3 shimmer"></div>
-                </div>
-                <div class="h-5 bg-gray-200 rounded w-1/2 mx-auto shimmer"></div>
-                <div class="h-12 bg-gray-200 rounded-lg shimmer"></div>
+            <!-- Business Logo -->
+            <div class="flex justify-center mb-6">
+                <img src="https://storage.googleapis.com/crem-40ccb.appspot.com/profile-pictures/676bedd3d9ed24328f94bf9b/1738186888618_tah.png" 
+                     alt="Business Logo" 
+                     class="w-48 h-auto mb-4">
+            </div>
+
+            <!-- Main Content -->
+            <div class="text-center space-y-6">
+                <!-- Title -->
+                <h2 class="text-4xl font-bold text-white">Claim Your 15% Discount Voucher Now</h2>
+                
+                <!-- Description -->
+                <p class="text-gray-300 text-lg">
+                    Download your voucher in just a few clicks and use it during your next dine-in experience with us.
+                </p>
+
+                <!-- Claim Button -->
+                <button onclick="claimVoucher('${data.voucher.id}')" 
+                        class="btn-claim w-full mt-8 bg-[#E7B355] hover:bg-[#d4a34c] text-[#1C1E26] py-4 px-8 rounded-full font-semibold text-xl transition-all duration-300">
+                    Get Voucher Now
+                </button>
             </div>
         </div>
     </div>
@@ -177,97 +203,32 @@
         function renderVoucher(data) {
             const content = document.getElementById('cardContent');
             
-            // Format expiry date
-            const expiryDate = new Date(data.voucher.expiryDate);
-            const timeLeft = getTimeLeft(expiryDate);
-            
             content.innerHTML = `
-                <!-- 🏷️ Title -->
-                <div class="text-2xl font-bold mb-3 text-center">
-                    ${data.voucher.title}
+                <!-- Business Logo -->
+                <div class="flex justify-center mb-6">
+                    <img src="https://storage.googleapis.com/crem-40ccb.appspot.com/profile-pictures/676bedd3d9ed24328f94bf9b/1738186888618_tah.png" 
+                         alt="Business Logo" 
+                         class="w-48 h-auto mb-4">
                 </div>
 
-                <!-- 📝 Description -->
-                <p class="text-gray-600 text-sm text-center leading-relaxed">
-                    ${data.voucher.description}
-                </p>
-
-                <!-- 💰 Discount -->
-                <div class="flex items-center justify-center my-8">
-                    <div class="discount-badge px-8 py-4 rounded-full text-3xl font-bold flex items-center">
-                        <i class="mdi mdi-tag-outline mr-2 text-2xl"></i>
-                        ${data.voucher.discountValue}${data.voucher.discountType === 'percentage' ? '%' : '$'} OFF
-                    </div>
-                </div>
-
-                <!-- ⏰ Expiry -->
-                <div class="flex items-center justify-center text-sm text-gray-500 bg-gray-50 py-2 px-4 rounded-full mx-auto w-fit">
-                    <i class="mdi mdi-clock-outline mr-2"></i>
-                    ${timeLeft}
-                </div>
-
-                <!-- 🎯 Claim Button -->
-                <button onclick="claimVoucher('${data.voucher.id}')" 
-                        class="btn-claim w-full mt-6 bg-black text-white py-4 rounded-lg font-semibold flex items-center justify-center group">
-                    <i class="mdi mdi-ticket-percent mr-2 text-xl group-hover:rotate-12 transition-transform"></i>
-                    Claim Your Voucher Now
-                </button>
-
-                <!-- 🔄 Auto-refresh Notice -->
-                <div class="text-xs text-gray-400 text-center mt-4">
-                    Auto-refreshing every 30 seconds
+                <!-- Main Content -->
+                <div class="text-center space-y-6">
+                    <h2 class="text-4xl font-bold text-white">${data.voucher.title}</h2>
+                    <p class="text-gray-300 text-lg">${data.voucher.description}</p>
+                    <button onclick="claimVoucher('${data.voucher.id}')" 
+                            class="btn-claim w-full mt-8 bg-[#E7B355] hover:bg-[#d4a34c] text-[#1C1E26] py-4 px-8 rounded-full font-semibold text-xl transition-all duration-300">
+                        Get Voucher Now
+                    </button>
                 </div>
             `;
-        }
-
-        // ⏰ Get Time Left
-        function getTimeLeft(expiryDate) {
-            const now = new Date();
-            const diff = expiryDate - now;
-            
-            if (diff <= 0) return 'Expired';
-            
-            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-            const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-            
-            if (days > 0) {
-                return `Expires in ${days} days${hours > 0 ? ` ${hours} hours` : ''}`;
-            }
-            return `Expires in ${hours} hours`;
         }
 
         // 🎨 Apply Design Settings with Enhanced Effects
         function applyDesign(design) {
             const card = document.getElementById('voucherCard');
-            const content = document.getElementById('cardContent');
-            
-            // Apply colors with transition
-            card.style.transition = 'all 0.3s ease';
-            card.style.backgroundColor = design.colors.background;
-            content.style.color = design.colors.text;
-            
-            // Apply border radius
-            card.style.borderRadius = `${design.borderRadius}px`;
-            
-            // Apply shadow with intensity
-            if (design.shadow.enabled) {
-                const shadowIntensity = {
-                    light: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06)',
-                    medium: '0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05)',
-                    heavy: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)'
-                }[design.shadow.intensity];
-                
-                card.style.boxShadow = shadowIntensity;
-            }
-            
-            // Apply spacing with layout type
-            const paddingScale = {
-                compact: 16,
-                standard: 24,
-                spacious: 32
-            }[design.layout.type] || 24;
-            
-            content.style.padding = `${paddingScale}px`;
+            card.style.backgroundColor = '#1C1E26'; // Dark background like in the image
+            card.style.borderRadius = '12px';
+            card.style.boxShadow = '0 10px 25px -5px rgba(0, 0, 0, 0.2)';
         }
 
         // ❌ Show Error
