@@ -132,6 +132,38 @@ const register = async (req, res) => {
     // Check if user exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
+      // Handle guest user conversion
+      if (existingUser.isGuest) {
+        // Update existing guest user
+        existingUser.password = password;
+        existingUser.role = role;
+        existingUser.isGuest = false;
+        existingUser.gdprConsent = existingUser.gdprConsent || {
+          marketing: false,
+          analytics: true,
+          consentDate: new Date()
+        };
+        
+        // Preserve guest details but mark as converted
+        existingUser.guestDetails = {
+          ...existingUser.guestDetails,
+          convertedAt: new Date(),
+          originalClaimedFrom: existingUser.guestDetails?.claimedFrom
+        };
+
+        // Generate new verification token
+        existingUser.verificationToken = generateVerificationToken();
+        await existingUser.save();
+
+        // Send verification email
+        await sendVerificationEmail(email, existingUser.verificationToken);
+
+        return res.status(200).json({
+          success: true,
+          message: 'Guest account upgraded! Please verify your email 📧'
+        });
+      }
+
       return res.status(400).json({
         success: false,
         message: 'Email already registered! 📧'

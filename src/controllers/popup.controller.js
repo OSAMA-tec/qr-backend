@@ -90,13 +90,74 @@ const registerAndClaimVoucher = async (req, res) => {
 
     // Check if user exists
     let user = await User.findOne({ email });
-    const isNewUser = !user;
+    let isNewUser = !user;
     
     if (user) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email already registered! Please login to claim voucher. 📧'
+      // Handle existing guest user
+      if (user.isGuest) {
+        // Check for existing claim for THIS voucher + business
+        const existingClaim = user.voucherClaims.some(claim => 
+          claim.voucherId.equals(voucher._id) &&
+          claim.businessId.equals(businessId)
+        );
+
+        if (existingClaim) {
+          return res.status(400).json({
+            success: false,
+            message: 'You already claimed this voucher! ❌'
+          });
+        }
+
+        // Add new voucher claim
+        user.voucherClaims.push({
+          voucherId: voucher._id,
+          businessId: businessId,
+          claimMethod: 'popup',
+          expiryDate: voucher.endDate,
+          analytics: {
+            clickDate: new Date(),
+            viewDate: new Date()
+          }
+        });
+
+        // Update guest details
+        user.guestDetails.claimedFrom = 'popup';
+        user.guestDetails.businessId = businessId;
+        await user.save();
+        isNewUser = false; // Maintain correct analytics tracking
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: 'Email already registered! Please login to claim voucher. 📧'
+        });
+      }
+    } else {
+      // Create new guest user
+      user = new User({
+        firstName,
+        lastName,
+        email,
+        password,
+        phoneNumber,
+        role: 'customer',
+        dateOfBirth: dateOfBirth,
+        isVerified: false,
+        guestDetails: {
+          claimedFrom: 'popup',
+          businessId: voucher.businessId
+        },
+        voucherClaims: [{
+          voucherId: voucher._id,
+          businessId: voucher.businessId,
+          claimMethod: 'popup',
+          expiryDate: voucher.endDate,
+          analytics: {
+            clickDate: new Date(),
+            viewDate: new Date()
+          }
+        }]
       });
+      await user.save();
     }
 
     // Find active voucher
@@ -112,37 +173,6 @@ const registerAndClaimVoucher = async (req, res) => {
         message: 'No active voucher found! 🚫'
       });
     }
-
-    // Create new user
-    user = new User({
-      firstName,
-      lastName,
-      email,
-      password,
-      phoneNumber,
-      role: 'customer',
-      dateOfBirth: dateOfBirth,
-      isVerified: false,
-      guestDetails: {
-        claimedFrom: 'popup',
-        businessId: voucher.businessId
-      },
-      voucherClaims: [{
-        voucherId: voucher._id,
-        businessId: voucher.businessId,
-        claimMethod: 'popup',
-        expiryDate: voucher.endDate,
-        analytics: {
-          clickDate: new Date(),
-          viewDate: new Date()
-        }
-      }]
-    });
-
-    // Generate verification token
-    user.verificationToken = crypto.randomBytes(32).toString('hex');
-    
-    await user.save();
 
     // Update voucher analytics
     await Coupon.updateOne(

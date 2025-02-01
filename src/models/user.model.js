@@ -49,7 +49,9 @@ const userSchema = new mongoose.Schema({
       influencerPlatform: String,
       referralCode: String,
       joinedAt: Date
-    }
+    },
+    convertedAt: Date,
+    originalClaimedFrom: String
   },
   picUrl: String,
   // Profile Info
