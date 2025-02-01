@@ -412,6 +412,13 @@ const submitCampaignForm = async (req, res) => {
     // Get source details based on campaign type 🔍
     let sourceDetails = null;
     let sourceType = campaign.type;
+     // Track device and location info 📱
+     const deviceInfo = detectDevice(userAgent);
+     const browserInfo = parseUserAgent(userAgent);
+     const location = await getLocationFromIP(ipAddress);
+ 
+     // Track click analytics using model method
+     campaign.trackClick(deviceInfo, browserInfo, location);
 
     switch (campaign.type) {
       case 'influencer':
@@ -1327,14 +1334,14 @@ const submitCampaignAnswer = async (req, res) => {
 const updateCampaignQuestion = async (req, res) => {
   try {
     const { campaignId } = req.params;
-    const { text, isRequired = false } = req.body;
+    const { question } = req.body;
     const businessId = req.user.userId;
 
-    // Validate campaignId format
-    if (!mongoose.Types.ObjectId.isValid(campaignId)) {
+    // Validate payload
+    if (!question || !question.text) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid campaign ID format! 🚫'
+        message: 'Question text is required! 📝'
       });
     }
 
@@ -1353,8 +1360,8 @@ const updateCampaignQuestion = async (req, res) => {
 
     // Update question
     campaign.question = {
-      text: text,
-      isRequired
+      text: question.text,
+      isRequired: question.isRequired || false
     };
 
     await campaign.save();
