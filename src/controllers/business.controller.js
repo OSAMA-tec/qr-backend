@@ -1324,7 +1324,7 @@ const getTopCustomers = async (req, res) => {
     // Build aggregation pipeline based on filter type 📊
     const pipeline = [
       { $match: baseMatch },
-      // Add fields for analytics
+      // Filter voucherClaims for this business
       {
         $addFields: {
           businessClaims: {
@@ -1336,7 +1336,7 @@ const getTopCustomers = async (req, res) => {
           }
         }
       },
-      // Add calculated fields
+      // Add calculated fields for claims and extract couponIds
       {
         $addFields: {
           totalClaims: { $size: "$businessClaims" },
@@ -1357,10 +1357,33 @@ const getTopCustomers = async (req, res) => {
                 cond: { $eq: ["$$claim.status", "redeemed"] }
               }
             }
+          },
+          // Create an array of coupon ids from voucher claims
+          couponIds: {
+            $map: {
+              input: "$businessClaims",
+              as: "claim",
+              in: "$$claim.voucherId"
+            }
           }
         }
       },
-      // Lookup transactions
+      // Calculate unique coupons used using couponIds
+      {
+        $addFields: {
+          uniqueCoupons: { $size: { $setUnion: ["$couponIds", []] } }
+        }
+      },
+      // Lookup coupon details from coupons collection
+      {
+        $lookup: {
+          from: "coupons",
+          localField: "couponIds",
+          foreignField: "_id",
+          as: "couponsInfo"
+        }
+      },
+      // Lookup transactions for each customer
       {
         $lookup: {
           from: "transactions",
@@ -1387,81 +1410,60 @@ const getTopCustomers = async (req, res) => {
           totalTransactions: { $size: "$transactions" },
           avgTransactionValue: {
             $cond: [
-              { $gt: [{ $size: "$transactions" }, 0] },
-              { $divide: [{ $sum: "$transactions.amount" }, { $size: "$transactions" }] },
+              { $gt: [ { $size: "$transactions" }, 0 ] },
+              { $divide: [ { $sum: "$transactions.amount" }, { $size: "$transactions" } ] },
               0
             ]
           },
           lastTransaction: { $max: "$transactions.createdAt" }
         }
-      }
-    ];
-
-    // Add filter-specific match stages 🎯
-    if (status) {
-      pipeline.push({
+      },
+      // Add filter-specific match stage based on status
+      ...(status && (status === 'claimed' || status === 'redeemed') ? [{
         $match: {
-          [`${status}Claims`]: { $gt: 0 }
+          [status === 'claimed' ? 'activeClaims' : 'redeemedClaims']: { $gt: 0 } // Filter based on whether status is claimed or redeemed
         }
-      });
-    }
-
-    if (minAmount > 0) {
-      pipeline.push({
+      }] : []),
+      ...(minAmount > 0 ? [{
         $match: {
           totalSpent: { $gte: parseFloat(minAmount) }
         }
-      });
-    }
-
-    if (minClaims > 0) {
-      pipeline.push({
+      }] : []),
+      ...(minClaims > 0 ? [{
         $match: {
           totalClaims: { $gte: parseInt(minClaims) }
         }
-      });
-    }
-
-    if (minRedemptions > 0) {
-      pipeline.push({
+      }] : []),
+      ...(minRedemptions > 0 ? [{
         $match: {
           redeemedClaims: { $gte: parseInt(minRedemptions) }
         }
-      });
-    }
-
-    // Add sorting based on filter type 📋
-    const sortStage = {};
-    switch (filterBy) {
-      case 'totalSpent':
-        sortStage.$sort = { totalSpent: -1 };
-        break;
-      case 'avgTransactionValue':
-        sortStage.$sort = { avgTransactionValue: -1 };
-        break;
-      case 'totalTransactions':
-        sortStage.$sort = { totalTransactions: -1 };
-        break;
-      case 'redeemedClaims':
-        sortStage.$sort = { redeemedClaims: -1 };
-        break;
-      case 'activeClaims':
-        sortStage.$sort = { activeClaims: -1 };
-        break;
-      case 'totalClaims':
-      default:
-        sortStage.$sort = { totalClaims: -1 };
-    }
-
-    pipeline.push(sortStage);
-
-    // Limit results
-    pipeline.push({ $limit: parseInt(limit) });
+      }] : []),
+      // Sorting stage based on filter type 📋
+      { $sort: (function() {
+          // Simple sort logic
+          switch (filterBy) {
+            case 'totalSpent': return { totalSpent: -1 };
+            case 'avgTransactionValue': return { avgTransactionValue: -1 };
+            case 'totalTransactions': return { totalTransactions: -1 };
+            case 'redeemedClaims': return { redeemedClaims: -1 };
+            case 'activeClaims': return { activeClaims: -1 };
+            case 'totalClaims':
+            default: return { totalClaims: -1 };
+          }
+        })() 
+      },
+      // Limit the number of results
+      { $limit: parseInt(limit) }
+    ];
 
     // Execute aggregation
     const customers = await User.aggregate(pipeline);
 
-    // Process and format the response 🔄
+    // Fetch business analytics for the current business (extra useful data) 📊
+    const businessAnalytics = await BusinessAnalytics.findOne({ businessId: businessObjectId });
+
+    // Process and format the response with extended data
     const formattedCustomers = customers.map((customer, index) => ({
       rank: index + 1,
       id: customer._id,
@@ -1478,6 +1480,12 @@ const getTopCustomers = async (req, res) => {
         totalClaims: customer.totalClaims,
         activeClaims: customer.activeClaims,
         redeemedClaims: customer.redeemedClaims,
+        uniqueCouponsUsed: customer.uniqueCoupons, // Number of unique coupons used
+        // Map coupon details (code and title) for display
+        couponsUsed: (customer.couponsInfo || []).map(coupon => ({
+          code: coupon.code,
+          title: coupon.title
+        })),
         claimToRedeemRate: customer.totalClaims ? 
           ((customer.redeemedClaims / customer.totalClaims) * 100).toFixed(2) + '%' : 
           '0%'
@@ -1521,11 +1529,13 @@ const getTopCustomers = async (req, res) => {
       }
     };
 
+    // Send response including extended customer data and business analytics
     res.json({
       success: true,
       data: {
         customers: formattedCustomers,
-        summary
+        summary,
+        businessAnalytics
       }
     });
 
