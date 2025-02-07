@@ -4,6 +4,7 @@ const Campaign = require("../models/campaign.model");
 const Coupon = require("../models/coupon.model");
 const Transaction = require("../models/transaction.model");
 const BusinessAnalytics = require("../models/businessAnalytics.model");
+const { SubscriptionPlan, Subscription } = require("../models/subscription.model");
 const mongoose = require("mongoose");
 
 // Get all customers with filters and detailed info 👥
@@ -962,8 +963,625 @@ const getAllCampaigns = async (req, res) => {
   }
 };
 
+// Get admin dashboard overview stats 📊
+const getAdminDashboardStats = async (req, res) => {
+  try {
+    const [
+      totalBusinesses,
+      activeBusinesses,
+      totalRevenue,
+      totalQRScans,
+      activeCoupons,
+      totalCustomers,
+      subscriptionStats
+    ] = await Promise.all([
+      // Total businesses
+      User.countDocuments({ role: 'business' }),
+      
+      // Active businesses
+      User.countDocuments({ 
+        role: 'business',
+        'businessProfile.status': 'active'
+      }),
+      
+      // Total platform revenue
+      Transaction.aggregate([
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$amount" }
+          }
+        }
+      ]),
+      
+      // Total QR scans
+      BusinessAnalytics.aggregate([
+        {
+          $group: {
+            _id: null,
+            total: { $sum: "$totalQRScans" }
+          }
+        }
+      ]),
+      
+      // Active coupons
+      Coupon.countDocuments({ status: 'active' }),
+      
+      // Total customers
+      User.countDocuments({ role: 'customer' }),
+      
+      // Subscription stats
+      Subscription.aggregate([
+        {
+          $group: {
+            _id: "$plan",
+            count: { $sum: 1 },
+            revenue: { $sum: "$customAmount.amount" }
+          }
+        }
+      ])
+    ]);
+
+    // Format response
+    res.json({
+      success: true,
+      data: {
+        overview: {
+          totalBusinesses,
+          activeBusinesses,
+          totalRevenue: totalRevenue[0]?.total || 0,
+          totalQRScans: totalQRScans[0]?.total || 0,
+          activeCoupons,
+          totalCustomers
+        },
+        subscriptions: {
+          plans: subscriptionStats.map(stat => ({
+            plan: stat._id,
+            count: stat.count,
+            revenue: stat.revenue
+          })),
+          total: subscriptionStats.reduce((sum, stat) => sum + stat.count, 0),
+          totalRevenue: subscriptionStats.reduce((sum, stat) => sum + stat.revenue, 0)
+        },
+        growth: {
+          businesses: ((activeBusinesses / totalBusinesses) * 100).toFixed(2),
+          revenue: 0, // Calculate based on previous period
+          qrScans: 0, // Calculate based on previous period
+          customers: 0 // Calculate based on previous period
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error("Get admin dashboard stats error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch admin dashboard stats! 😢",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
+  }
+};
+
+// Get all businesses with filters and analytics 🏢
+const getAllBusinesses = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      search,
+      category,
+      status,
+      subscriptionPlan,
+      sortBy = "createdAt",
+      sortOrder = "desc"
+    } = req.query;
+
+    // Build query
+    const query = { role: 'business' };
+    
+    if (search) {
+      const searchRegex = new RegExp(search, "i");
+      query.$or = [
+        { "businessProfile.businessName": searchRegex },
+        { email: searchRegex }
+      ];
+    }
+    
+    if (category) {
+      query["businessProfile.category"] = category;
+    }
+    
+    if (status) {
+      query["businessProfile.status"] = status;
+    }
+    
+    if (subscriptionPlan) {
+      query["subscription.plan"] = subscriptionPlan;
+    }
+
+    // Calculate pagination
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    // Build aggregation pipeline
+    const pipeline = [
+      { $match: query },
+      
+      // Lookup business analytics
+      {
+        $lookup: {
+          from: "businessanalytics",
+          localField: "_id",
+          foreignField: "businessId",
+          as: "analytics"
+        }
+      },
+      
+      // Lookup subscription details
+      {
+        $lookup: {
+          from: "subscriptions",
+          localField: "_id",
+          foreignField: "businessId",
+          as: "subscriptionDetails"
+        }
+      },
+      
+      // Add computed fields
+      {
+        $addFields: {
+          analytics: { $arrayElemAt: ["$analytics", 0] },
+          subscriptionInfo: { $arrayElemAt: ["$subscriptionDetails", 0] },
+          isActive: { $eq: ["$businessProfile.status", "active"] }
+        }
+      },
+      
+      // Sort results
+      { $sort: { [sortBy]: sortOrder === "asc" ? 1 : -1 } },
+      
+      // Pagination
+      { $skip: skip },
+      { $limit: parseInt(limit) }
+    ];
+
+    // Execute aggregation
+    const [businesses, totalCount] = await Promise.all([
+      User.aggregate(pipeline),
+      User.countDocuments(query)
+    ]);
+
+    // Format response
+    const formattedBusinesses = businesses.map(business => ({
+      id: business._id,
+      businessInfo: {
+        name: business.businessProfile?.businessName || '',
+        email: business.email,
+        category: business.businessProfile?.category || '',
+        status: business.businessProfile?.status || 'inactive',
+        location: business.businessProfile?.location || {},
+        joinedDate: business.createdAt
+      },
+      subscription: {
+        plan: business.subscription?.plan || 'free',
+        status: business.subscription?.status || 'inactive',
+        revenue: business.subscriptionInfo?.customAmount?.amount || 0,
+        currentPeriodEnd: business.subscription?.currentPeriodEnd
+      },
+      analytics: {
+        totalRevenue: business.analytics?.totalRevenue || 0,
+        totalCustomers: business.analytics?.totalCustomers || 0,
+        totalQRScans: business.analytics?.totalQRScans || 0,
+        totalRedemptions: business.analytics?.totalRedemptions || 0
+      },
+      metrics: {
+        activeCoupons: business.analytics?.voucherStats?.activeVouchers || 0,
+        totalCoupons: business.analytics?.voucherStats?.totalVouchers || 0,
+        conversionRate: business.analytics?.totalRedemptions && business.analytics?.totalQRScans ? 
+          ((business.analytics.totalRedemptions / business.analytics.totalQRScans) * 100).toFixed(2) : 0
+      }
+    }));
+
+    // Calculate summary statistics
+    const summary = {
+      total: totalCount,
+      active: businesses.filter(b => b.isActive).length,
+      metrics: {
+        totalRevenue: formattedBusinesses.reduce((sum, b) => sum + b.analytics.totalRevenue, 0),
+        totalCustomers: formattedBusinesses.reduce((sum, b) => sum + b.analytics.totalCustomers, 0),
+        totalQRScans: formattedBusinesses.reduce((sum, b) => sum + b.analytics.totalQRScans, 0),
+        avgRevenue: formattedBusinesses.length ? 
+          formattedBusinesses.reduce((sum, b) => sum + b.analytics.totalRevenue, 0) / formattedBusinesses.length : 0
+      },
+      categories: {},
+      subscriptions: {}
+    };
+
+    // Group by category and subscription plan
+    formattedBusinesses.forEach(business => {
+      // Category stats
+      const category = business.businessInfo.category || 'uncategorized';
+      if (!summary.categories[category]) {
+        summary.categories[category] = 0;
+      }
+      summary.categories[category]++;
+
+      // Subscription stats
+      const plan = business.subscription.plan;
+      if (!summary.subscriptions[plan]) {
+        summary.subscriptions[plan] = 0;
+      }
+      summary.subscriptions[plan]++;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        businesses: formattedBusinesses,
+        summary,
+        pagination: {
+          total: totalCount,
+          page: parseInt(page),
+          pages: Math.ceil(totalCount / limit),
+          hasMore: page < Math.ceil(totalCount / limit)
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error("Get all businesses error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch businesses! 😢",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
+  }
+};
+
+// Get detailed business info and analytics 📈
+const getBusinessDetails = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const pipeline = [
+      { 
+        $match: {
+          _id: new mongoose.Types.ObjectId(id),
+          role: 'business'
+        }
+      },
+      
+      // Lookup business analytics
+      {
+        $lookup: {
+          from: "businessanalytics",
+          localField: "_id",
+          foreignField: "businessId",
+          as: "analytics"
+        }
+      },
+      
+      // Lookup subscription details
+      {
+        $lookup: {
+          from: "subscriptions",
+          localField: "_id",
+          foreignField: "businessId",
+          as: "subscriptionDetails"
+        }
+      },
+      
+      // Lookup active campaigns
+      {
+        $lookup: {
+          from: "campaigns",
+          localField: "_id",
+          foreignField: "businessId",
+          pipeline: [
+            { $match: { status: "active" } },
+            { $sort: { createdAt: -1 } },
+            { $limit: 5 }
+          ],
+          as: "activeCampaigns"
+        }
+      },
+      
+      // Lookup recent transactions
+      {
+        $lookup: {
+          from: "transactions",
+          localField: "_id",
+          foreignField: "businessId",
+          pipeline: [
+            { $sort: { createdAt: -1 } },
+            { $limit: 10 }
+          ],
+          as: "recentTransactions"
+        }
+      },
+      
+      // Add computed fields
+      {
+        $addFields: {
+          analytics: { $arrayElemAt: ["$analytics", 0] },
+          subscriptionInfo: { $arrayElemAt: ["$subscriptionDetails", 0] }
+        }
+      }
+    ];
+
+    const business = await User.aggregate(pipeline);
+
+    if (!business || business.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Business not found! 🔍"
+      });
+    }
+
+    const businessData = business[0];
+
+    // Format response
+    const formattedBusiness = {
+      id: businessData._id,
+      businessInfo: {
+        name: businessData.businessProfile?.businessName || '',
+        email: businessData.email,
+        phoneNumber: businessData.phoneNumber,
+        category: businessData.businessProfile?.category || '',
+        description: businessData.businessProfile?.description || '',
+        status: businessData.businessProfile?.status || 'inactive',
+        location: businessData.businessProfile?.location || {},
+        logo: businessData.businessProfile?.logo,
+        joinedDate: businessData.createdAt,
+        lastLogin: businessData.lastLogin
+      },
+      subscription: {
+        plan: businessData.subscription?.plan || 'free',
+        status: businessData.subscription?.status || 'inactive',
+        revenue: businessData.subscriptionInfo?.customAmount?.amount || 0,
+        currentPeriodEnd: businessData.subscription?.currentPeriodEnd,
+        features: businessData.subscriptionInfo?.features || {},
+        paymentHistory: businessData.subscriptionInfo?.paymentHistory || []
+      },
+      analytics: {
+        overview: {
+          totalRevenue: businessData.analytics?.totalRevenue || 0,
+          totalCustomers: businessData.analytics?.totalCustomers || 0,
+          totalQRScans: businessData.analytics?.totalQRScans || 0,
+          totalRedemptions: businessData.analytics?.totalRedemptions || 0
+        },
+        monthly: businessData.analytics?.monthlyStats || [],
+        daily: businessData.analytics?.dailyStats || [],
+        devices: businessData.analytics?.deviceStats || {},
+        browsers: businessData.analytics?.browserStats || {},
+        sources: businessData.analytics?.sourceStats || {}
+      },
+      vouchers: {
+        active: businessData.analytics?.voucherStats?.activeVouchers || 0,
+        total: businessData.analytics?.voucherStats?.totalVouchers || 0,
+        claims: businessData.analytics?.voucherStats?.totalClaims || 0,
+        redemptions: businessData.analytics?.voucherStats?.totalRedemptions || 0
+      },
+      campaigns: {
+        active: businessData.activeCampaigns?.map(campaign => ({
+          id: campaign._id,
+          name: campaign.name,
+          type: campaign.type,
+          startDate: campaign.startDate,
+          endDate: campaign.endDate,
+          status: campaign.status,
+          metrics: campaign.metrics || {}
+        })) || []
+      },
+      transactions: {
+        recent: businessData.recentTransactions?.map(tx => ({
+          id: tx._id,
+          amount: tx.amount,
+          date: tx.createdAt,
+          status: tx.status,
+          customer: tx.customerId,
+          voucher: tx.voucherId
+        })) || []
+      },
+      settings: {
+        widget: businessData.businessProfile?.widgetSettings || {},
+        terms: businessData.businessProfile?.termsAndConditions || {}
+      }
+    };
+
+    res.json({
+      success: true,
+      data: formattedBusiness
+    });
+
+  } catch (error) {
+    console.error("Get business details error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch business details! 😢",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
+  }
+};
+
+// Get business analytics 📊
+const getBusinessAnalytics = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { startDate, endDate } = req.query;
+
+    const analytics = await BusinessAnalytics.findOne({ businessId: id });
+    
+    if (!analytics) {
+      return res.status(404).json({
+        success: false,
+        message: "Business analytics not found! 🔍"
+      });
+    }
+
+    // Filter stats by date range if provided
+    let monthlyStats = analytics.monthlyStats || [];
+    let dailyStats = analytics.dailyStats || [];
+
+    if (startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      monthlyStats = monthlyStats.filter(stat => {
+        const statDate = new Date(stat.year, stat.month - 1);
+        return statDate >= start && statDate <= end;
+      });
+
+      dailyStats = dailyStats.filter(stat => {
+        const statDate = new Date(stat.date);
+        return statDate >= start && statDate <= end;
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        overview: {
+          totalRevenue: analytics.totalRevenue || 0,
+          totalCustomers: analytics.totalCustomers || 0,
+          totalQRScans: analytics.totalQRScans || 0,
+          totalRedemptions: analytics.totalRedemptions || 0
+        },
+        trends: {
+          monthly: monthlyStats,
+          daily: dailyStats
+        },
+        customers: {
+          total: analytics.customerStats?.total || 0,
+          active: analytics.customerStats?.active || 0,
+          guest: analytics.customerStats?.guest || 0,
+          registered: analytics.customerStats?.registered || 0
+        },
+        devices: analytics.deviceStats || {},
+        browsers: analytics.browserStats || {},
+        sources: analytics.sourceStats || {},
+        vouchers: analytics.voucherStats || {}
+      }
+    });
+
+  } catch (error) {
+    console.error("Get business analytics error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch business analytics! 😢",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
+  }
+};
+
+// Get subscription statistics 💳
+const getSubscriptionStats = async (req, res) => {
+  try {
+    const [
+      subscriptionStats,
+      revenueByPlan,
+      activeSubscriptions,
+      subscriptionTrends
+    ] = await Promise.all([
+      // Subscription plan distribution
+      Subscription.aggregate([
+        {
+          $group: {
+            _id: "$plan",
+            total: { $sum: 1 },
+            active: {
+              $sum: {
+                $cond: [{ $eq: ["$status", "active"] }, 1, 0]
+              }
+            },
+            revenue: { $sum: "$customAmount.amount" }
+          }
+        }
+      ]),
+
+      // Revenue by plan
+      Subscription.aggregate([
+        {
+          $match: { status: "active" }
+        },
+        {
+          $group: {
+            _id: "$plan",
+            monthlyRevenue: { $sum: "$customAmount.amount" },
+            subscribers: { $sum: 1 }
+          }
+        }
+      ]),
+
+      // Active subscriptions count
+      Subscription.countDocuments({ status: "active" }),
+
+      // Monthly subscription trends
+      Subscription.aggregate([
+        {
+          $group: {
+            _id: {
+              year: { $year: "$createdAt" },
+              month: { $month: "$createdAt" }
+            },
+            newSubscriptions: { $sum: 1 },
+            revenue: { $sum: "$customAmount.amount" }
+          }
+        },
+        { $sort: { "_id.year": 1, "_id.month": 1 } }
+      ])
+    ]);
+
+    res.json({
+      success: true,
+      data: {
+        overview: {
+          totalSubscriptions: subscriptionStats.reduce((sum, stat) => sum + stat.total, 0),
+          activeSubscriptions,
+          totalRevenue: subscriptionStats.reduce((sum, stat) => sum + stat.revenue, 0)
+        },
+        plans: subscriptionStats.map(stat => ({
+          plan: stat._id,
+          total: stat.total,
+          active: stat.active,
+          revenue: stat.revenue,
+          churnRate: stat.total ? ((stat.total - stat.active) / stat.total * 100).toFixed(2) : 0
+        })),
+        revenue: {
+          byPlan: revenueByPlan.map(plan => ({
+            plan: plan._id,
+            monthlyRevenue: plan.monthlyRevenue,
+            subscribers: plan.subscribers,
+            arpu: plan.subscribers ? (plan.monthlyRevenue / plan.subscribers).toFixed(2) : 0
+          }))
+        },
+        trends: {
+          monthly: subscriptionTrends.map(trend => ({
+            year: trend._id.year,
+            month: trend._id.month,
+            newSubscriptions: trend.newSubscriptions,
+            revenue: trend.revenue
+          }))
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error("Get subscription stats error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch subscription statistics! 😢",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
+  }
+};
+
+// Export all controllers 📤
 module.exports = {
   getAllCustomers,
   getCustomerDetails,
-  getAllCampaigns
+  getAllCampaigns,
+  getAdminDashboardStats,
+  getAllBusinesses,
+  getBusinessDetails,
+  getBusinessAnalytics,
+  getSubscriptionStats
 }; 

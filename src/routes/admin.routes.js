@@ -1,9 +1,12 @@
 // Import dependencies 📦
 const router = require('express').Router();
 const {
-  getAllCustomers,
-  getCustomerDetails,
-  getAllCampaigns
+  getAllBusinesses,
+  getBusinessDetails,
+  getBusinessAnalytics,
+  getAdminDashboardStats,
+  getAllCampaigns,
+  getSubscriptionStats
 } = require('../controllers/admin.controller');
 
 const authMiddleware = require('../middleware/auth.middleware');
@@ -24,12 +27,19 @@ const isAdminMiddleware = (req, res, next) => {
 router.use(authMiddleware);
 router.use(isAdminMiddleware);
 
-// Customer management routes 👥
-router.get('/customers', getAllCustomers);
-router.get('/customers/:id', getCustomerDetails);
+// Dashboard Overview 📊
+router.get('/dashboard/stats', getAdminDashboardStats);
+
+// Business management routes 🏢
+router.get('/businesses', getAllBusinesses);
+router.get('/businesses/:id', getBusinessDetails);
+router.get('/businesses/:id/analytics', getBusinessAnalytics);
 
 // Campaign management routes 🎯
 router.get('/campaigns', getAllCampaigns);
+
+// Subscription Stats 💳
+router.get('/subscriptions/stats', getSubscriptionStats);
 
 // Lookup routes 📚
 router.get('/lookup', getLookupData);
