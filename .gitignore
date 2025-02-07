@@ -30,3 +30,12 @@ postman/
 # API documentation 📚
 index.txt
 
+mrintroduction-1c6871ed63be.json
+
+# Apple Wallet Certificates
+certificates/
+*.cer
+*.p12
+*.pem
+*.key
+pass.json

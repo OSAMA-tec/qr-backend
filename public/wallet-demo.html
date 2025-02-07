@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add to Google Wallet Demo</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            text-align: center;
+        }
+        .container {
+            margin-top: 50px;
+        }
+        #qrcode {
+            margin: 20px auto;
+            width: 256px;
+            height: 256px;
+        }
+        .wallet-button {
+            background-color: #4285f4;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+        }
+        .wallet-button:hover {
+            background-color: #3367d6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Add Voucher to Google Wallet</h1>
+        <div id="qrcode"></div>
+        <button id="addToWallet" class="wallet-button">Add to Google Wallet</button>
+    </div>
+
+    <script>
+        // Configuration - Replace these with your values
+        const API_BASE_URL = 'http://localhost:3000/api'; // e.g., 'http://localhost:3000/api'
+        const AUTH_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2NzZiZWRkM2Q5ZWQyNDMyOGY5NGJmOWIiLCJyb2xlIjoiYnVzaW5lc3MiLCJpYXQiOjE3Mzg3OTA4NzMsImV4cCI6MTczOTA1MDA3M30.WgGYeS2MEBx9yZTu55GKk6i5tBs1eCtzI74xtrg27MI';
+        const VOUCHER_ID = '679fb9442f7a88ea8e982900';
+
+        // Generate QR Code
+        const qrCode = new QRCode(document.getElementById("qrcode"), {
+            text: `${VOUCHER_ID}`,
+            width: 256,
+            height: 256,
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.H
+        });
+
+        // Add to Wallet Button Handler
+        document.getElementById('addToWallet').addEventListener('click', async () => {
+            try {
+                // Get QR code data URL
+                const qrCodeDataUrl = document.querySelector('#qrcode img').src;
+
+                // Generate Google Wallet pass
+                const response = await fetch(`${API_BASE_URL}/wallet/generate-pass`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${AUTH_TOKEN}`
+                    },
+                    body: JSON.stringify({
+                        voucherId: VOUCHER_ID,
+                        qrCode: qrCodeDataUrl
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    // Redirect to Google Pay link
+                    window.location.href = result.data.googlePayLink;
+                } else {
+                    alert('Failed to generate pass: ' + result.message);
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to generate pass. Please try again.');
+            }
+        });
+    </script>
+</body>
+</html> 

@@ -20,6 +20,8 @@ const qrCodeRoutes = require('./routes/qrCode.routes');
 const campaignRoutes = require('./routes/campaign.routes');
 const subscriptionRoutes = require('./routes/subscription.routes');
 const marketplaceRoutes = require('./routes/marketplace.routes');
+const googleWalletRoutes = require('./routes/googleWallet.routes');
+const appleWalletRoutes = require('./routes/appleWallet.routes');
 const { cookieParser, handleCSRFError } = require('./middleware/csrf.middleware');
 
 // Initialize express app 🚀
@@ -36,7 +38,7 @@ const chatSocketHandler = require('./socket/chat.socket');
 // Create socket server
 const io = socketIO(server, {
   cors: {
-    origin: ['http://localhost:5173','http://localhost:5174','https://qr-lac-alpha.vercel.app','http://127.0.0.1:5500','https://mrintroduction.vercel.app'], // Match your CORS settings
+    origin: ['http://localhost:5173','http://localhost:5174','https://qr-lac-alpha.vercel.app','http://127.0.0.1:5500','https://mrintroduction.vercel.app','http://127.0.0.1:5500'], // Match your CORS settings
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -58,7 +60,8 @@ const corsOptions = {
     'http://localhost:3000',    // Alternative local dev
     'https://qr-lac-alpha.vercel.app',
     'http://localhost:5174',
-    'https://mrintroduction.vercel.app'  // Production frontend
+    'https://mrintroduction.vercel.app',  // Production frontend
+    'http://127.0.0.1:5500',  // Production frontend
   ],
   credentials: true,  // 🔑 Allow credentials (cookies)
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -86,14 +89,14 @@ app.use(cors(corsOptions));
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
-      defaultSrc: ["'self'", 'http://localhost:5173', 'https://qr-lac-alpha.vercel.app','https://mrintroduction.vercel.app','http://localhost:5174'],
-      connectSrc: ["'self'", 'http://localhost:5173', 'https://qr-lac-alpha.vercel.app','https://mrintroduction.vercel.app','http://localhost:5174'],
-      frameSrc: ["'self'", 'http://localhost:5173', 'https://qr-lac-alpha.vercel.app','https://mrintroduction.vercel.app','http://localhost:5174'],
+      defaultSrc: ["'self'", 'http://localhost:5173', 'https://qr-lac-alpha.vercel.app','https://mrintroduction.vercel.app','http://localhost:5174','http://127.0.0.1:5500'],
+      connectSrc: ["'self'", 'http://localhost:5173', 'https://qr-lac-alpha.vercel.app','https://mrintroduction.vercel.app','http://localhost:5174','http://127.0.0.1:5500'],
+      frameSrc: ["'self'", 'http://localhost:5173', 'https://qr-lac-alpha.vercel.app','https://mrintroduction.vercel.app','http://localhost:5174','http://127.0.0.1:5500'],
       imgSrc: ["'self'", 'data:', 'https:'],
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       styleSrc: ["'self'", "'unsafe-inline'", 'https:'],
       fontSrc: ["'self'", 'https:', 'data:'],
-      formAction: ["'self'", 'http://localhost:5173', 'https://qr-lac-alpha.vercel.app','https://mrintroduction.vercel.app','http://localhost:5174']
+      formAction: ["'self'", 'http://localhost:5173', 'https://qr-lac-alpha.vercel.app','https://mrintroduction.vercel.app','http://localhost:5174','http://127.0.0.1:5500']
     }
   },
   crossOriginEmbedderPolicy: false,  // 🔓 Allow loading resources from different origins
@@ -117,6 +120,11 @@ app.use('/api/campaigns', campaignRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/marketplace', marketplaceRoutes);
+app.use('/api/wallet/google', googleWalletRoutes);
+app.use('/api/wallet/apple', appleWalletRoutes);
+
+// Serve static files from public directory 📁
+app.use(express.static('public'));
 
 // Health check route 🏥
 app.get('/', (req, res) => {
