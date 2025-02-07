@@ -83,7 +83,7 @@ const corsOptions = {
     'X-XSRF-TOKEN'
   ]
 };
-
+//updated cors
 // Apply middlewares 🔧
 app.use(cors(corsOptions));
 app.use(helmet({
