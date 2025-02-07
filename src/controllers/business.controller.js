@@ -824,7 +824,7 @@ const getAllBusinesses = async (req, res) => {
     // Get businesses with pagination and sorting
     const businesses = await User.find(query)
       .select(
-        "-password -resetPasswordToken -resetPasswordExpires -verificationToken"
+        "firstName lastName email phoneNumber picUrl dateOfBirth businessProfile isVerified isActive createdAt updatedAt lastLogin gdprConsent businessName businessCategory businessDescription businessLocation"
       )
       .sort({ [sortBy]: sortOrder })
       .skip(skip)
