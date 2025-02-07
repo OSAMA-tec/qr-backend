@@ -117,7 +117,7 @@
         async function loadVoucherDetails() {
             try {
                 const response = await fetch(
-                    `https://1728-103-102-158-201.ngrok-free.app/api/wallet/apple/business/${BUSINESS_ID}/voucher/${VOUCHER_ID}/details`
+                    `http://localhost:3000/api/wallet/apple/business/${BUSINESS_ID}/voucher/${VOUCHER_ID}/details`
                 );
                 
                 if (!response.ok) {
@@ -166,7 +166,7 @@
                 
                 // Send only the QR code URL instead of the data URL
                 const response = await fetch(
-                    `https://1728-103-102-158-201.ngrok-free.app/api/wallet/apple/business/${BUSINESS_ID}/voucher/${VOUCHER_ID}/pass`,
+                    `http://localhost:3000/api/wallet/apple/business/${BUSINESS_ID}/voucher/${VOUCHER_ID}/pass`,
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
