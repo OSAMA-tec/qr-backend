@@ -134,16 +134,18 @@ const listVouchers = async (req, res) => {
     const query = { businessId };
 
     // Add status filter 🔍
-    if (status === 'active') {
-      query.isActive = true;
-      query.startDate = { $lte: new Date() };
-      query.endDate = { $gte: new Date() };
-    } else if (status === 'inactive') {
-      query.isActive = false;
-    } else if (status === 'expired') {
-      query.endDate = { $lt: new Date() };
-    } else if (status === 'scheduled') {
-      query.startDate = { $gt: new Date() };
+    if (status && status !== 'all') {  // Only apply status filter if status is specified and not 'all'
+      if (status === 'active') {
+        query.isActive = true;
+        query.startDate = { $lte: new Date() };
+        query.endDate = { $gte: new Date() };
+      } else if (status === 'inactive') {
+        query.isActive = false;
+      } else if (status === 'expired') {
+        query.endDate = { $lt: new Date() };
+      } else if (status === 'scheduled') {
+        query.startDate = { $gt: new Date() };
+      }
     }
 
     // Add search filter 🔎
@@ -384,6 +386,28 @@ const toggleVoucherStatus = async (req, res) => {
     const { action } = req.params; // 'activate' or 'deactivate'
     const businessId = req.user.userId;
 
+    // For activation, check if voucher dates are valid
+    if (action === 'activate') {
+      const voucher = await Coupon.findOne({ _id: id, businessId });
+      
+      if (!voucher) {
+        return res.status(404).json({
+          success: false,
+          message: 'Voucher not found! 🔍'
+        });
+      }
+
+      // Check if voucher is expired
+      const now = new Date();
+      if (now > voucher.endDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Cannot activate expired voucher! ⌛'
+        });
+      }
+    }
+
+    // Proceed with status update
     const voucher = await Coupon.findOneAndUpdate(
       { _id: id, businessId },
       { $set: { isActive: action === 'activate' } },
