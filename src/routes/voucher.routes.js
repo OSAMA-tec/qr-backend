@@ -53,7 +53,7 @@ router.post('/redeem', voucherRedemptionValidation, redeemVoucher); //tt
 router.post('/scan', scanVoucher); //tt
 // ID specific routes
 router.get('/:id', getVoucherDetails); //tt
-router.put('/:id', voucherUpdateValidation, updateVoucher); //tt
+router.put('/:id', updateVoucher); //tt
 router.delete('/:id', deleteVoucher); //tt
 router.post('/:id/activate', toggleVoucherStatus); //tt
 router.post('/:id/deactivate', toggleVoucherStatus); //tt

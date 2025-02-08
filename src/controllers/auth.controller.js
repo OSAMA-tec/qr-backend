@@ -395,7 +395,7 @@ const registerBusiness = async (req, res) => {
       stripeCustomerId: `temp_${business._id}`,
       stripeSubscriptionId: `temp_${Date.now()}`,
       plan: subscriptionPlan,
-      status: 'trialing',
+      status: 'Trial',
       billing: {
         cycle: 'monthly',
         currentPeriodStart: new Date(),
