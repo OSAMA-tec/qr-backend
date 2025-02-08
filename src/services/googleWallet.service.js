@@ -3,8 +3,8 @@ const { JWT } = require('google-auth-library');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 
-// Load service account credentials
-const credentials = require('../../mrintroduction-1c6871ed63be.json');
+// Load service account credentials from environment variable
+const credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
 
 // Initialize JWT client 🔑
 const jwtClient = new JWT({
