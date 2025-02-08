@@ -38,7 +38,7 @@ const chatSocketHandler = require('./socket/chat.socket');
 // Create socket server
 const io = socketIO(server, {
   cors: {
-    origin: ['http://localhost:5173','http://localhost:5174','https://qr-lac-alpha.vercel.app','http://127.0.0.1:5500','https://mrintroduction.vercel.app','http://127.0.0.1:5500'], // Match your CORS settings
+    origin: ['http://localhost:5173','http://localhost:5174','https://qr-lac-alpha.vercel.app','http://127.0.0.1:5500','https://crm-main-84fbb667e7f6.herokuapp.com','https://mrintroduction.vercel.app','http://127.0.0.1:5500','https://web-main-383420c94b64.herokuapp.com'], // Match your CORS settings
     methods: ['GET', 'POST'],
     credentials: true
   }
@@ -62,6 +62,8 @@ const corsOptions = {
     'http://localhost:5174',
     'https://mrintroduction.vercel.app',  // Production frontend
     'http://127.0.0.1:5500',  // Production frontend
+    'https://crm-main-84fbb667e7f6.herokuapp.com',
+    'https://web-main-383420c94b64.herokuapp.com',
   ],
   credentials: true,  // 🔑 Allow credentials (cookies)
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -89,14 +91,14 @@ app.use(cors(corsOptions));
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
-      defaultSrc: ["'self'", 'http://localhost:5173', 'https://qr-lac-alpha.vercel.app','https://mrintroduction.vercel.app','http://localhost:5174','http://127.0.0.1:5500'],
-      connectSrc: ["'self'", 'http://localhost:5173', 'https://qr-lac-alpha.vercel.app','https://mrintroduction.vercel.app','http://localhost:5174','http://127.0.0.1:5500'],
-      frameSrc: ["'self'", 'http://localhost:5173', 'https://qr-lac-alpha.vercel.app','https://mrintroduction.vercel.app','http://localhost:5174','http://127.0.0.1:5500'],
+      defaultSrc: ["'self'", 'http://localhost:5173','https://crm-main-84fbb667e7f6.herokuapp.com', 'https://qr-lac-alpha.vercel.app','https://mrintroduction.vercel.app','http://localhost:5174','http://127.0.0.1:5500','https://web-main-383420c94b64.herokuapp.com'],
+      connectSrc: ["'self'", 'http://localhost:5173','https://crm-main-84fbb667e7f6.herokuapp.com', 'https://qr-lac-alpha.vercel.app','https://mrintroduction.vercel.app','http://localhost:5174','http://127.0.0.1:5500','https://web-main-383420c94b64.herokuapp.com'],
+      frameSrc: ["'self'", 'http://localhost:5173','https://crm-main-84fbb667e7f6.herokuapp.com', 'https://qr-lac-alpha.vercel.app','https://mrintroduction.vercel.app','http://localhost:5174','http://127.0.0.1:5500','https://web-main-383420c94b64.herokuapp.com'],
       imgSrc: ["'self'", 'data:', 'https:'],
       scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
       styleSrc: ["'self'", "'unsafe-inline'", 'https:'],
       fontSrc: ["'self'", 'https:', 'data:'],
-      formAction: ["'self'", 'http://localhost:5173', 'https://qr-lac-alpha.vercel.app','https://mrintroduction.vercel.app','http://localhost:5174','http://127.0.0.1:5500']
+      formAction: ["'self'", 'http://localhost:5173','https://crm-main-84fbb667e7f6.herokuapp.com', 'https://qr-lac-alpha.vercel.app','https://mrintroduction.vercel.app','http://localhost:5174','http://127.0.0.1:5500','https://web-main-383420c94b64.herokuapp.com']
     }
   },
   crossOriginEmbedderPolicy: false,  // 🔓 Allow loading resources from different origins
