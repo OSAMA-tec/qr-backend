@@ -20,7 +20,7 @@ const qrCodeRoutes = require('./routes/qrCode.routes');
 const campaignRoutes = require('./routes/campaign.routes');
 const subscriptionRoutes = require('./routes/subscription.routes');
 const marketplaceRoutes = require('./routes/marketplace.routes');
-const googleWalletRoutes = require('./routes/googleWallet.routes');
+// const googleWalletRoutes = require('./routes/googleWallet.routes');
 const appleWalletRoutes = require('./routes/appleWallet.routes');
 const { cookieParser, handleCSRFError } = require('./middleware/csrf.middleware');
 
@@ -120,7 +120,7 @@ app.use('/api/campaigns', campaignRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/marketplace', marketplaceRoutes);
-app.use('/api/wallet/google', googleWalletRoutes);
+// app.use('/api/wallet/google', googleWalletRoutes);
 app.use('/api/wallet/apple', appleWalletRoutes);
 
 // Serve static files from public directory 📁
