@@ -15,7 +15,7 @@ const createVoucher = async (req, res) => {
     const businessId = req.user.userId;
     const voucherData = req.body;
 
-    // Check if widget template exists and is active 🎨
+    // ============ Validate Widget Template ============
     if (!voucherData.widgetTemplateId) {
       return res.status(400).json({
         success: false,
@@ -35,12 +35,34 @@ const createVoucher = async (req, res) => {
       });
     }
 
-    // Generate unique code if not provided 🎯
+    // ============ Process Dates ============
+    // Convert string dates to Date objects
+    const startDate = new Date(voucherData.startDate);
+    const endDate = new Date(voucherData.endDate);
+    
+    // Validate dates
+    const now = new Date();
+    if (startDate < now) {
+      return res.status(400).json({
+        success: false,
+        message: 'Start date must be in the future! ⚠️'
+      });
+    }
+
+    if (endDate <= startDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'End date must be after start date! ⚠️'
+      });
+    }
+
+    // ============ Generate Code and QR ============
+    // Generate unique code if not provided
     if (!voucherData.code) {
       voucherData.code = crypto.randomBytes(4).toString('hex').toUpperCase();
     }
 
-    // Create QR code with widget template info 📱
+    // Create QR code with widget template info
     const qrCodeData = await QRCode.toDataURL(JSON.stringify({
       code: voucherData.code,
       businessId,
@@ -48,43 +70,62 @@ const createVoucher = async (req, res) => {
       type: 'voucher'
     }));
 
-    // Create voucher with widget template 🎫
-    const voucher = new Coupon({
-      ...voucherData,
-      businessId,
-      qrCode: {
-        data: qrCodeData,
-        url: `${process.env.BASE_URL}/voucher/${voucherData.code}`
-      }
-    });
+    // ============ Validate Discount Values ============
+    // Convert string values to numbers
+    const discountValue = parseFloat(voucherData.discountValue);
+    const minimumPurchase = voucherData.minimumPurchase ? parseFloat(voucherData.minimumPurchase) : undefined;
+    const maximumDiscount = voucherData.maximumDiscount ? parseFloat(voucherData.maximumDiscount) : undefined;
 
-    // Validate dates 📅
-    const now = new Date();
-    if (new Date(voucher.startDate) < now) {
-      return res.status(400).json({
-        success: false,
-        message: 'Start date must be in the future! ⚠️'
-      });
-    }
-
-    if (new Date(voucher.endDate) <= new Date(voucher.startDate)) {
-      return res.status(400).json({
-        success: false,
-        message: 'End date must be after start date! ⚠️'
-      });
-    }
-
-    // Validate discount values 💰
-    if (voucher.discountType === 'percentage' && voucher.discountValue > 100) {
+    if (voucherData.discountType === 'percentage' && discountValue > 100) {
       return res.status(400).json({
         success: false,
         message: 'Percentage discount cannot exceed 100%! 💯'
       });
     }
 
+    // ============ Create Voucher ============
+    // Create voucher with processed data
+    const voucher = new Coupon({
+      ...voucherData,
+      businessId,
+      startDate,  // Use processed Date object
+      endDate,    // Use processed Date object
+      discountValue,
+      minimumPurchase,
+      maximumDiscount,
+      qrCode: {
+        data: qrCodeData,
+        url: `${process.env.BASE_URL}/voucher/${voucherData.code}`
+      },
+      // Initialize analytics
+      analytics: {
+        views: 0,
+        clicks: 0,
+        redemptions: 0,
+        totalRevenue: 0,
+        marketplace: {
+          clicks: 0,
+          submissions: 0,
+          conversions: 0,
+          ageDemographics: {
+            under18: 0,
+            eighteenTo25: 0,
+            twenty6To35: 0,
+            thirty6To50: 0,
+            over50: 0
+          }
+        }
+      },
+      // Set initial status
+      isActive: true,
+      usedTrue: false,
+      currentUsage: 0
+    });
+
+    // Save the voucher
     await voucher.save();
 
-    // Populate response with widget template details 🔍
+    // Populate response with widget template details
     await voucher.populate([
       {
         path: 'widgetTemplateId',
@@ -92,15 +133,26 @@ const createVoucher = async (req, res) => {
       }
     ]);
 
+    // Log the saved voucher for debugging
+    console.log('Saved Voucher:', {
+      startDate: voucher.startDate,
+      endDate: voucher.endDate,
+      // Log other relevant fields
+      discountValue: voucher.discountValue,
+      minimumPurchase: voucher.minimumPurchase,
+      maximumDiscount: voucher.maximumDiscount
+    });
+
     res.status(201).json({
       success: true,
       message: 'Voucher created successfully! 🎉',
       data: voucher
     });
+
   } catch (error) {
     console.error('Create voucher error:', error);
 
-    // Handle validation errors ❌
+    // Handle validation errors
     if (error.name === 'ValidationError') {
       const validationErrors = Object.values(error.errors).map(err => err.message);
       return res.status(400).json({
@@ -120,7 +172,8 @@ const createVoucher = async (req, res) => {
 
     res.status(500).json({
       success: false,
-      message: 'Failed to create voucher! 😢'
+      message: 'Failed to create voucher! 😢',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
