@@ -1,0 +1,29 @@
+{
+    "formatVersion": 1,
+    "passTypeIdentifier": "pass.com.mrintroduction.foodvoucher",
+    "teamIdentifier": "JDTWJ5S7B8",
+    "organizationName": "Mr Introduction",
+    "description": "Mr Introduction Digital Pass",
+    "serialNumber": "template",
+    "foregroundColor": "rgb(255, 255, 255)",
+    "backgroundColor": "rgb(60, 65, 76)",
+    "labelColor": "rgb(255, 255, 255)",
+    "logoText": "Mr Introduction",
+    "coupon": {
+        "primaryFields": [],
+        "secondaryFields": [],
+        "auxiliaryFields": [],
+        "backFields": []
+    },
+    "locations": [],
+    "barcodes": [{
+        "format": "PKBarcodeFormatQR",
+        "message": "template",
+        "messageEncoding": "iso-8859-1",
+        "altText": "Use this code at the store"
+    }],
+    "relevantDate": "2024-12-31T00:00:00Z",
+    "expirationDate": "2024-12-31T23:59:59Z",
+    "sharingProhibited": false,
+    "voided": false
+}
