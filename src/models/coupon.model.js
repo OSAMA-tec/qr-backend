@@ -60,26 +60,14 @@ const couponSchema = new mongoose.Schema({
     type: Number,
     min: [0, 'Maximum discount amount cannot be negative']
   },
-  // startDate: {
-  //   type: Date,
-  //   required: [true, 'Start date is required! 📅'],
-  //   validate: {
-  //     validator: function(v) {
-  //       return v >= new Date();
-  //     },
-  //     message: 'Start date must be in the future!'
-  //   }
-  // },
-  // endDate: {
-  //   type: Date,
-  //   required: [true, 'End date is required! 📅'],
-  //   validate: {
-  //     validator: function(v) {
-  //       return v > this.startDate;
-  //     },
-  //     message: 'End date must be after start date!'
-  //   }
-  // },
+  startDate: {
+    type: Date,
+    required: [true, 'Start date is required! 📅'],
+  },
+  endDate: {
+    type: Date,
+    required: [true, 'End date is required! 📅'], 
+  },
   isActive: {
     type: Boolean,
     default: true
