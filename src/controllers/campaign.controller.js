@@ -227,6 +227,15 @@ const trackCampaignClick = async (req, res) => {
       });
     }
 
+    // Get voucher details and update its analytics 🎫
+    const voucher = await Coupon.findById(campaign.voucherId);
+    if (!voucher) {
+      return res.status(404).json({
+        success: false,
+        message: 'Voucher not found! 🚫'
+      });
+    }
+
     // Get source details based on campaign type
     let sourceDetails = null;
     let sourceType = campaign.type;
@@ -305,15 +314,46 @@ const trackCampaignClick = async (req, res) => {
     const browserInfo = parseUserAgent(userAgent);
     const location = await getLocationFromIP(ipAddress);
 
-    // Track click analytics using model method
+    // ============ Update Campaign Analytics ============
+    // Track click analytics using campaign model method
     campaign.trackClick(deviceInfo, browserInfo, location);
 
-    // Save all updates with session
-    await campaign.save({ session });
+    // ============ Update Voucher Analytics ============
+    // Initialize analytics if not exists
+    if (!voucher.analytics) {
+      voucher.analytics = {
+        views: 0,
+        clicks: 0,
+        redemptions: 0,
+        totalRevenue: 0,
+        marketplace: {
+          clicks: 0,
+          submissions: 0,
+          conversions: 0,
+          ageDemographics: {
+            under18: 0,
+            eighteenTo25: 0,
+            twenty6To35: 0,
+            thirty6To50: 0,
+            over50: 0
+          }
+        }
+      };
+    }
 
-    // Get voucher details for form 🎫
-    const voucher = await Coupon.findById(campaign.voucherId)
-      .select('code title description discountType discountValue minimumPurchase');
+    // Update voucher analytics
+    voucher.analytics.clicks++;
+    
+    // Update marketplace analytics if voucher is in marketplace
+    if (voucher.marketplace) {
+      voucher.analytics.marketplace.clicks++;
+    }
+
+    // Save all updates with session
+    await Promise.all([
+      campaign.save({ session }),
+      voucher.save({ session })
+    ]);
 
     // Prepare response data 📦
     const responseData = {
@@ -339,7 +379,7 @@ const trackCampaignClick = async (req, res) => {
           location: campaign.businessId.businessProfile?.location
         },
         question: campaign.question || null,
-        voucher: voucher ? {
+        voucher: {
           code: voucher.code,
           title: voucher.title,
           description: voucher.description,
@@ -347,7 +387,7 @@ const trackCampaignClick = async (req, res) => {
           discountValue: voucher.discountValue,
           minimumPurchase: voucher.minimumPurchase,
           question: voucher.question || null
-        } : null,
+        },
         source: sourceDetails
       },
       tracking: {
