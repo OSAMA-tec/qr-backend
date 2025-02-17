@@ -31,7 +31,7 @@ const fetchImageFromUrl = async (url) => {
 };
 
 // Helper function to process and resize image
-const processImage = async (imageData, type, density = '1x') => {
+const processImage = async (imageData, type, density = '1x', options = {}) => {
   try {
     if (!imageData) return null;
 
@@ -74,7 +74,8 @@ const processImage = async (imageData, type, density = '1x') => {
     const resized = await sharp(buffer)
       .resize(targetWidth, targetHeight, {
         fit: 'contain',
-        background: { r: 0, g: 0, b: 0, alpha: 0 }
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+        ...options
       })
       .png()
       .toBuffer();
@@ -172,71 +173,60 @@ const createVoucherPass = async ({
     // Create pass instance with proper structure
     const pass = template.createPass({
       serialNumber: `voucher-${voucherCode}-${Date.now()}`,
-      description: description || `${businessName} - ${voucherTitle}`,
+      description: voucherTitle,
       organizationName: businessName,
-      logoText: businessName,
+      // Remove logoText to prevent duplicate logos
+      logoText: '',
       relevantDate: expiryDate,
-      // Ensure proper date format
       expirationDate: new Date(expiryDate).toISOString(),
-      // Set proper sharing and voiding flags
       sharingProhibited: false,
       voided: false,
-      // Coupon specific fields
+      // Clean modern styling
+      backgroundColor: 'rgb(25, 25, 35)',      // Keep the dark background
+      foregroundColor: 'rgb(255, 255, 255)',   // Pure white text
+      labelColor: 'rgb(180, 180, 200)',        // Subtle accent for labels
+      // Simplified layout with proper spacing
       coupon: {
         primaryFields: [
           {
-            key: 'offer',
-            label: 'OFFER',
+            key: 'discount',
             value: discountText,
-            changeMessage: '%@'
+            textAlignment: 'PKTextAlignmentCenter',
+            attributedValue: `<div style='font-family: -apple-system; font-size: 50px; font-weight: bold; letter-spacing: -1px; color: rgb(255, 255, 255); margin-top: 20px;'>${discountText}</div>`
           }
         ],
-        secondaryFields: [
-          {
-            key: 'title',
-            label: 'TITLE',
-            value: voucherTitle
-          },
-          {
-            key: 'business',
-            label: 'BUSINESS',
-            value: businessName
-          }
-        ],
-        auxiliaryFields: [
-          {
-            key: 'minimumPurchase',
-            label: 'MIN PURCHASE',
-            value: `$${minimumPurchase}`,
-            textAlignment: 'PKTextAlignmentRight'
-          },
-          {
-            key: 'maxDiscount',
-            label: 'MAX DISCOUNT',
-            value: `$${maximumDiscount}`,
-            textAlignment: 'PKTextAlignmentRight'
-          }
-        ],
+        // Remove secondary fields to prevent business name duplication
+        auxiliaryFields: [],
         backFields: [
+          {
+            key: 'offer_details',
+            label: 'OFFER DETAILS',
+            value: voucherTitle,
+            attributedValue: `<div style='font-family: -apple-system; font-size: 16px; font-weight: 500;'>${voucherTitle}</div>\n\n${description}`
+          },
+          {
+            key: 'validity',
+            label: 'VALID UNTIL',
+            value: new Date(expiryDate).toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
+            })
+          },
+          {
+            key: 'terms',
+            label: 'TERMS & CONDITIONS',
+            value: `• Minimum Purchase Required: $${minimumPurchase}\n• Maximum Discount Value: $${maximumDiscount}\n• This voucher cannot be combined with other offers\n• Valid only at participating locations`
+          },
           {
             key: 'code',
             label: 'VOUCHER CODE',
-            value: voucherCode
-          },
-          {
-            key: 'expires',
-            label: 'EXPIRES',
-            value: new Date(expiryDate).toLocaleDateString(),
-            dateStyle: 'PKDateStyleLong'
-          },
-          {
-            key: 'conditions',
-            label: 'CONDITIONS',
-            value: `Minimum purchase: $${minimumPurchase}\nMaximum discount: $${maximumDiscount}\nValid until: ${new Date(expiryDate).toLocaleDateString()}`
+            value: voucherCode,
+            attributedValue: `<div style='font-family: monospace; font-size: 18px; font-weight: bold;'>${voucherCode}</div>`
           }
         ]
       },
-      // Barcode with proper format
+      // Clean QR code placement
       barcodes: [{
         message: voucherCode,
         format: 'PKBarcodeFormatQR',
@@ -245,41 +235,53 @@ const createVoucherPass = async ({
       }]
     });
 
-    // Add location if provided
+    try {
+      // Process only necessary images - no strip image to prevent duplicates
+      const [icon1x, icon2x, logo1x, logo2x] = await Promise.all([
+        // Icon for the pass
+        processImage(icon || logo, 'icon', '1x', {
+          fit: 'contain',
+          background: { r: 25, g: 25, b: 35, alpha: 1 },
+          padding: 4
+        }),
+        processImage(icon || logo, 'icon', '2x', {
+          fit: 'contain',
+          background: { r: 25, g: 25, b: 35, alpha: 1 },
+          padding: 4
+        }),
+        // Logo - positioned at top left
+        processImage(logo, 'logo', '1x', {
+          fit: 'contain',
+          background: { r: 25, g: 25, b: 35, alpha: 0 }, // Transparent background
+          padding: 0
+        }),
+        processImage(logo, 'logo', '2x', {
+          fit: 'contain',
+          background: { r: 25, g: 25, b: 35, alpha: 0 }, // Transparent background
+          padding: 0
+        })
+      ]);
+
+      // Add images - remove strip image
+      if (icon1x) await pass.images.add('icon', icon1x);
+      if (icon2x) await pass.images.add('icon', icon2x, '2x');
+      if (logo1x) await pass.images.add('logo', logo1x);
+      if (logo2x) await pass.images.add('logo', logo2x, '2x');
+    } catch (imageError) {
+      console.warn('Error processing images:', imageError);
+    }
+
+    // Add location if provided with enhanced relevant text
     if (latitude && longitude) {
       pass.locations = [
         {
           latitude,
           longitude,
-          relevantText: `You're near ${businessName}. Don't forget to use your voucher!`
+          relevantText: `Save ${discountText} at ${businessName}!`
         }
       ];
     }
 
-    // Process and add images
-    const [logo1x, logo2x, icon1x, icon2x] = await Promise.all([
-      processImage(logo, 'logo', '1x'),
-      processImage(logo, 'logo', '2x'),
-      processImage(icon || logo, 'icon', '1x'),
-      processImage(icon || logo, 'icon', '2x')
-    ]);
-
-    // Add images if available
-    if (logo1x) {
-      await pass.images.add('logo', logo1x);
-    }
-    if (logo2x) {
-      await pass.images.add('logo', logo2x, '2x');
-    }
-
-    if (icon1x) {
-      await pass.images.add('icon', icon1x);
-    }
-    if (icon2x) {
-      await pass.images.add('icon', icon2x, '2x');
-    }
-
-    // Generate and return pass
     return await pass.asBuffer();
 
   } catch (error) {
