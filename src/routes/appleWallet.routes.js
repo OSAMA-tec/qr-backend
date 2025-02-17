@@ -16,7 +16,7 @@ router.get('/business/:businessId/pass', generateBusinessPass);
 router.get('/business/pass', generateBusinessPass); // For current business
 
 // Voucher pass routes 🎟️
-router.post('/business/:businessId/voucher/:voucherId/pass', generateVoucherPass);
+router.post('/business/:businessId/voucher/:voucherId/pass/:userId', generateVoucherPass);
 router.get('/business/:businessId/voucher/:voucherId/details', getVoucherDetails);
 router.get('/business/:businessId/voucher/:voucherId/qr', getPassQRCode);
 

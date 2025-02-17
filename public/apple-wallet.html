@@ -103,6 +103,7 @@
         // ============ CONFIGURATION ============
         const BUSINESS_ID = '676bedd3d9ed24328f94bf9b';
         const VOUCHER_ID = '67b1f481d27495d8aa1f3762';
+        const USER_ID = '67b37c102cf35b4c0f0fb603';
         let QR_CODE = ''; // Will be populated dynamically
 
         // ============ DATE FORMATTER ============
@@ -165,7 +166,7 @@
                 button.textContent = 'Generating...';
                 
                 const response = await fetch(
-                    `http://localhost:3000/api/wallet/apple/business/${BUSINESS_ID}/voucher/${VOUCHER_ID}/pass`,
+                    `http://localhost:3000/api/wallet/apple/business/${BUSINESS_ID}/voucher/${VOUCHER_ID}/pass/${USER_ID}`,
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },

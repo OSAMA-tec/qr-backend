@@ -2,6 +2,7 @@
 const { createBusinessPass, createVoucherPass } = require('../services/appleWallet.service');
 const User = require('../models/user.model');
 const Coupon = require('../models/coupon.model');
+const crypto = require('crypto');
 
 // Create business pass 🎫
 const generateBusinessPass = async (req, res) => {
@@ -131,8 +132,7 @@ const getVoucherDetails = async (req, res) => {
 // Create voucher pass 🎟️
 const generateVoucherPass = async (req, res) => {
   try {
-    const { businessId, voucherId } = req.params;
-    const { qrCode } = req.body;
+    const { businessId, voucherId,userId } = req.params;
 
     // Get business details including logo (picUrl)
     const business = await User.findOne({
@@ -160,6 +160,32 @@ const generateVoucherPass = async (req, res) => {
       });
     }
 
+    // Generate secure QR code data 🔐
+    const claimId = crypto.randomBytes(16).toString('hex');
+    const qrData = {
+      claimId,
+      voucherId: voucher._id,
+      code: voucher.code,
+      businessId: business._id,
+      userId,
+      type: 'claimed_voucher',
+      timestamp: new Date(),
+      expiryDate: voucher.endDate
+    };
+
+    // Generate secure hash for verification 🔒
+    const dataString = JSON.stringify(qrData);
+    const hash = crypto
+      .createHash('sha256')
+      .update(dataString)
+      .digest('hex');
+
+    // Combine data and hash
+    const secureQrCode = JSON.stringify({
+      data: qrData,
+      hash
+    });
+
     // Format discount text
     const discountText = voucher.discountType === 'percentage' 
       ? `${voucher.discountValue}% OFF`
@@ -169,7 +195,7 @@ const generateVoucherPass = async (req, res) => {
     const passBuffer = await createVoucherPass({
       businessName: business.businessProfile?.businessName || `${business.firstName} ${business.lastName}`,
       voucherTitle: voucher.title,
-      voucherCode: qrCode || voucher.code,
+      voucherCode: voucher.code,
       expiryDate: voucher.endDate,
       discountValue: voucher.discountValue,
       discountType: voucher.discountType,
@@ -182,7 +208,8 @@ const generateVoucherPass = async (req, res) => {
       latitude: business.businessProfile?.location?.coordinates?.lat,
       longitude: business.businessProfile?.location?.coordinates?.lng,
       minimumPurchase: voucher.minimumPurchase,
-      maximumDiscount: voucher.maximumDiscount
+      maximumDiscount: voucher.maximumDiscount,
+      secureQrCode // Pass the secure QR code data
     });
 
     // Set response headers for Apple Wallet

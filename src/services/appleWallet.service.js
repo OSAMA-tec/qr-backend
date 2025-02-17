@@ -164,7 +164,8 @@ const createVoucherPass = async ({
   latitude,
   longitude,
   minimumPurchase,
-  maximumDiscount
+  maximumDiscount,
+  secureQrCode
 }) => {
   try {
     // Create template
@@ -226,9 +227,9 @@ const createVoucherPass = async ({
           }
         ]
       },
-      // Clean QR code placement
+      // Use secure QR code data
       barcodes: [{
-        message: voucherCode,
+        message: secureQrCode, // Use the secure QR code data
         format: 'PKBarcodeFormatQR',
         messageEncoding: 'iso-8859-1',
         altText: voucherCode
