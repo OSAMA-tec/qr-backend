@@ -169,20 +169,26 @@ const createVoucherPass = async ({
     // Create template
     const template = await createTemplate('coupon');
 
-    // Create pass instance
+    // Create pass instance with proper structure
     const pass = template.createPass({
       serialNumber: `voucher-${voucherCode}-${Date.now()}`,
       description: description || `${businessName} - ${voucherTitle}`,
       organizationName: businessName,
       logoText: businessName,
       relevantDate: expiryDate,
+      // Ensure proper date format
+      expirationDate: new Date(expiryDate).toISOString(),
+      // Set proper sharing and voiding flags
+      sharingProhibited: false,
+      voided: false,
       // Coupon specific fields
       coupon: {
         primaryFields: [
           {
             key: 'offer',
             label: 'OFFER',
-            value: discountText
+            value: discountText,
+            changeMessage: '%@'
           }
         ],
         secondaryFields: [
@@ -201,12 +207,14 @@ const createVoucherPass = async ({
           {
             key: 'minimumPurchase',
             label: 'MIN PURCHASE',
-            value: `$${minimumPurchase}`
+            value: `$${minimumPurchase}`,
+            textAlignment: 'PKTextAlignmentRight'
           },
           {
             key: 'maxDiscount',
             label: 'MAX DISCOUNT',
-            value: `$${maximumDiscount}`
+            value: `$${maximumDiscount}`,
+            textAlignment: 'PKTextAlignmentRight'
           }
         ],
         backFields: [
@@ -219,7 +227,7 @@ const createVoucherPass = async ({
             key: 'expires',
             label: 'EXPIRES',
             value: new Date(expiryDate).toLocaleDateString(),
-            dateStyle: 'long'
+            dateStyle: 'PKDateStyleLong'
           },
           {
             key: 'conditions',
@@ -228,11 +236,12 @@ const createVoucherPass = async ({
           }
         ]
       },
-      // Barcode
+      // Barcode with proper format
       barcodes: [{
         message: voucherCode,
         format: 'PKBarcodeFormatQR',
-        messageEncoding: 'iso-8859-1'
+        messageEncoding: 'iso-8859-1',
+        altText: voucherCode
       }]
     });
 

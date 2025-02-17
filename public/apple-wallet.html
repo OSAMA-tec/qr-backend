@@ -164,14 +164,13 @@
                 button.disabled = true;
                 button.textContent = 'Generating...';
                 
-                // Send only the QR code URL instead of the data URL
                 const response = await fetch(
                     `http://localhost:3000/api/wallet/apple/business/${BUSINESS_ID}/voucher/${VOUCHER_ID}/pass`,
                     {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ 
-                            qrCodeUrl: QR_CODE.url || QR_CODE // Fallback to data if url not available
+                            qrCodeUrl: QR_CODE.url || QR_CODE
                         })
                     }
                 );
@@ -181,22 +180,38 @@
                     throw new Error(errorData.message || 'Failed to generate pass');
                 }
 
+                // Get the pass data
                 const passBlob = await response.blob();
-                const url = window.URL.createObjectURL(passBlob);
                 
-                // Auto-download pattern
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = 'voucher.pkpass';
-                document.body.appendChild(a);
-                a.click();
+                // Create proper blob with correct MIME type
+                const properPassBlob = new Blob([passBlob], {
+                    type: 'application/vnd.apple.pkpass'
+                });
+                
+                // Create object URL with proper MIME type
+                const url = window.URL.createObjectURL(properPassBlob);
+                
+                // For iOS devices, directly open the pass
+                if (/(iPhone|iPad|iPod)/i.test(navigator.userAgent)) {
+                    window.location.href = url;
+                } else {
+                    // For other devices, download the file
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'voucher.pkpass';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                }
                 
                 // Cleanup
                 window.URL.revokeObjectURL(url);
-                document.body.removeChild(a);
 
                 // Success feedback
-                document.getElementById('successMessage').textContent = 'Pass generated successfully! Check your downloads.';
+                document.getElementById('successMessage').textContent = 
+                    /(iPhone|iPad|iPod)/i.test(navigator.userAgent) 
+                        ? 'Opening pass in Wallet...' 
+                        : 'Pass downloaded successfully! Open the file to add to Wallet.';
                 document.getElementById('successMessage').style.display = 'block';
                 document.getElementById('errorMessage').style.display = 'none';
 
