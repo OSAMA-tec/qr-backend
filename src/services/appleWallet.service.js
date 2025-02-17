@@ -171,32 +171,37 @@ const createVoucherPass = async ({
     // Create template
     const template = await createTemplate('coupon');
 
-    // Create pass instance with proper structure
+    // Create pass instance with enhanced design layout
     const pass = template.createPass({
       serialNumber: `voucher-${voucherCode}-${Date.now()}`,
       description: voucherTitle,
       organizationName: businessName,
-      // Remove logoText to prevent duplicate logos
       logoText: '',
       relevantDate: expiryDate,
       expirationDate: new Date(expiryDate).toISOString(),
       sharingProhibited: false,
       voided: false,
-      // Clean modern styling
-      backgroundColor: 'rgb(25, 25, 35)',      // Keep the dark background
-      foregroundColor: 'rgb(255, 255, 255)',   // Pure white text
-      labelColor: 'rgb(180, 180, 200)',        // Subtle accent for labels
-      // Simplified layout with proper spacing
+      backgroundColor: 'rgb(25, 25, 35)',
+      foregroundColor: 'rgb(255, 255, 255)',
+      labelColor: 'rgb(180, 180, 200)',
       coupon: {
+        headerFields: [
+          {
+            key: 'voucherTitle',
+            label: '',
+            value: voucherTitle,
+            textAlignment: 'PKTextAlignmentCenter',
+            attributedValue: `<div style='font-family: -apple-system; font-size: 20px; font-weight: bold; letter-spacing: 0.5px; color: rgb(255, 255, 255);'>${voucherTitle}</div>`
+          }
+        ],
         primaryFields: [
           {
             key: 'discount',
             value: discountText,
             textAlignment: 'PKTextAlignmentCenter',
-            attributedValue: `<div style='font-family: -apple-system; font-size: 50px; font-weight: bold; letter-spacing: -1px; color: rgb(255, 255, 255); margin-top: 20px;'>${discountText}</div>`
+            attributedValue: `<div style='font-family: -apple-system; font-size: 50px; font-weight: bold; letter-spacing: -1px; color: rgb(255, 255, 255); margin-top: 10px;'>${discountText}</div>`
           }
         ],
-        // Remove secondary fields to prevent business name duplication
         auxiliaryFields: [],
         backFields: [
           {
@@ -217,7 +222,7 @@ const createVoucherPass = async ({
           {
             key: 'terms',
             label: 'TERMS & CONDITIONS',
-            value: `• Minimum Purchase Required: $${minimumPurchase}\n• Maximum Discount Value: $${maximumDiscount}\n• This voucher cannot be combined with other offers\n• Valid only at participating locations`
+            value: `• Minimum Purchase: $${minimumPurchase}\n• Maximum Discount: $${maximumDiscount}\n• Not combinable with other offers\n• Valid at participating locations`
           },
           {
             key: 'code',
@@ -227,9 +232,8 @@ const createVoucherPass = async ({
           }
         ]
       },
-      // Use secure QR code data
       barcodes: [{
-        message: secureQrCode, // Use the secure QR code data
+        message: secureQrCode,
         format: 'PKBarcodeFormatQR',
         messageEncoding: 'iso-8859-1',
         altText: voucherCode
@@ -374,4 +378,4 @@ const createBusinessPass = async ({
 module.exports = {
   createBusinessPass,
   createVoucherPass
-}; 
+};
