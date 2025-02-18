@@ -5,6 +5,7 @@ const { Subscription } = require("../models/subscription.model");
 const mongoose = require("mongoose");
 const Coupon = require("../models/coupon.model");
 const CampaignLead = require("../models/campaignLead.model");
+const Campaign = require("../models/campaign.model");
 const BusinessAnalytics = require("../models/businessAnalytics.model");
 
 // Get business profile 🏢
@@ -1555,81 +1556,133 @@ const getInfluencersList = async (req, res) => {
     const businessId = req.user.userId;
     const businessObjectId = new mongoose.Types.ObjectId(businessId);
 
-    // Get unique influencers using aggregation 📊
-    const influencers = await User.aggregate([
+    // Get influencers from campaigns 🎯
+    const campaignInfluencers = await Campaign.aggregate([
       {
         $match: {
-          "guestDetails.businessId": businessObjectId,
-          "guestDetails.source.influencerName": { $exists: true, $ne: null }
+          businessId: businessObjectId,
+          'influencers.name': { $exists: true, $ne: null }
+        }
+      },
+      {
+        $unwind: '$influencers'
+      },
+      {
+        $group: {
+          _id: {
+            name: '$influencers.name',
+            platform: '$influencers.platform'
+          },
+          campaigns: { $addToSet: '$name' },
+          totalClicks: { $sum: '$influencers.stats.clicks' },
+          totalConversions: { $sum: '$influencers.stats.conversions' },
+          totalRevenue: { $sum: '$influencers.stats.revenue' },
+          lastActive: { $max: '$updatedAt' }
+        }
+      }
+    ]);
+
+    // Get influencers from campaign leads 📊
+    const leadInfluencers = await CampaignLead.aggregate([
+      {
+        $match: {
+          businessId: businessObjectId,
+          'influencerDetails.name': { $exists: true, $ne: null }
         }
       },
       {
         $group: {
           _id: {
-            name: "$guestDetails.source.influencerName",
-            platform: "$guestDetails.source.influencerPlatform"
+            name: '$influencerDetails.name',
+            platform: '$influencerDetails.platform'
           },
-          customersCount: { $sum: 1 },
-          totalRevenue: {
-            $sum: {
-              $reduce: {
-                input: "$voucherClaims",
-                initialValue: 0,
-                in: {
-                  $add: [
-                    "$$value",
-                    { $ifNull: ["$$this.analytics.revenue", 0] }
-                  ]
-                }
-              }
-            }
-          },
-          lastActive: { $max: "$createdAt" }
+          leadsCount: { $sum: 1 },
+          lastActive: { $max: '$createdAt' }
         }
-      },
-      {
-        $project: {
-          _id: 0,
-          name: "$_id.name",
-          platform: "$_id.platform",
-          customersCount: 1,
-          totalRevenue: 1,
-          lastActive: 1
-        }
-      },
-      {
-        $sort: { customersCount: -1 }
       }
     ]);
+
+    // Merge influencers data from both sources 🔄
+    const mergedInfluencers = new Map();
+
+    // Process campaign influencers
+    campaignInfluencers.forEach(inf => {
+      const key = `${inf._id.name}-${inf._id.platform}`;
+      mergedInfluencers.set(key, {
+        name: inf._id.name,
+        platform: inf._id.platform,
+        metrics: {
+          campaigns: inf.campaigns,
+          totalClicks: inf.totalClicks || 0,
+          totalConversions: inf.totalConversions || 0,
+          totalRevenue: inf.totalRevenue || 0,
+          leadsCount: 0,
+          lastActive: inf.lastActive
+        }
+      });
+    });
+
+    // Process lead influencers
+    leadInfluencers.forEach(inf => {
+      const key = `${inf._id.name}-${inf._id.platform}`;
+      if (mergedInfluencers.has(key)) {
+        const existing = mergedInfluencers.get(key);
+        existing.metrics.leadsCount = inf.leadsCount;
+        existing.metrics.lastActive = new Date(Math.max(
+          existing.metrics.lastActive,
+          inf.lastActive
+        ));
+      } else {
+        mergedInfluencers.set(key, {
+          name: inf._id.name,
+          platform: inf._id.platform,
+          metrics: {
+            campaigns: [],
+            totalClicks: 0,
+            totalConversions: 0,
+            totalRevenue: 0,
+            leadsCount: inf.leadsCount,
+            lastActive: inf.lastActive
+          }
+        });
+      }
+    });
+
+    // Convert map to array and sort by total conversions
+    const influencers = Array.from(mergedInfluencers.values())
+      .sort((a, b) => b.metrics.totalConversions - a.metrics.totalConversions);
+
+    // Calculate summary statistics 📊
+    const summary = {
+      total: influencers.length,
+      totalLeads: influencers.reduce((sum, inf) => sum + inf.metrics.leadsCount, 0),
+      totalRevenue: influencers.reduce((sum, inf) => sum + inf.metrics.totalRevenue, 0),
+      totalClicks: influencers.reduce((sum, inf) => sum + inf.metrics.totalClicks, 0),
+      totalConversions: influencers.reduce((sum, inf) => sum + inf.metrics.totalConversions, 0),
+      platformBreakdown: influencers.reduce((acc, inf) => {
+        acc[inf.platform] = (acc[inf.platform] || 0) + 1;
+        return acc;
+      }, {}),
+      averageConversionRate: influencers.length ? 
+        (influencers.reduce((sum, inf) => 
+          sum + (inf.metrics.totalClicks ? 
+            (inf.metrics.totalConversions / inf.metrics.totalClicks) * 100 : 0
+          ), 0) / influencers.length).toFixed(2) : "0.00"
+    };
 
     res.json({
       success: true,
       data: {
-        influencers: influencers.map(inf => ({
-          name: inf.name,
-          platform: inf.platform,
-          metrics: {
-            customersCount: inf.customersCount,
-            totalRevenue: inf.totalRevenue,
-            lastActive: inf.lastActive
-          }
-        })),
-        summary: {
-          total: influencers.length,
-          totalCustomers: influencers.reduce((sum, inf) => sum + inf.customersCount, 0),
-          totalRevenue: influencers.reduce((sum, inf) => sum + inf.totalRevenue, 0),
-          platformBreakdown: influencers.reduce((acc, inf) => {
-            acc[inf.platform] = (acc[inf.platform] || 0) + 1;
-            return acc;
-          }, {})
-        }
+        influencers,
+        summary
       }
     });
   } catch (error) {
     console.error("Get influencers list error:", error);
     res.status(500).json({
       success: false,
-      message: "Failed to fetch influencers list! 😢"
+      message: "Failed to fetch influencers list! 😢",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };
