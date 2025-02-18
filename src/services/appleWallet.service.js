@@ -132,6 +132,14 @@ const createTemplate = async (type) => {
       labelColor: 'rgb(255, 255, 255)',
       formatVersion: 1,
       organizationName: "Mr Introduction",
+      // Add web service configuration
+      webServiceURL: process.env.WALLET_WEB_SERVICE_URL,
+      authenticationToken: process.env.WALLET_AUTH_TOKEN,
+      // Add NFC configuration if available
+      nfc: process.env.NFC_ENABLED ? {
+        message: 'Use this pass at the register',
+        encryptionPublicKey: process.env.NFC_PUBLIC_KEY
+      } : undefined,
       certificates: {
         wwdr: wwdrContent
       }
@@ -181,43 +189,47 @@ const createVoucherPass = async ({
       expirationDate: new Date(expiryDate).toISOString(),
       sharingProhibited: false,
       voided: false,
+      // Enhanced color scheme for better contrast
       backgroundColor: 'rgb(25, 25, 35)',
       foregroundColor: 'rgb(255, 255, 255)',
       labelColor: 'rgb(180, 180, 200)',
+      // Add associated app if available
+      associatedStoreIdentifiers: process.env.APP_STORE_ID ? [parseInt(process.env.APP_STORE_ID)] : undefined,
+      // Add user info if available
+      userInfo: { voucherCode },
       coupon: {
         headerFields: [
           {
             key: 'voucherTitle',
             label: '',
             value: voucherTitle,
-            textAlignment: 'PKTextAlignmentCenter',
-            attributedValue: `<div style='font-family: -apple-system; font-size: 20px; font-weight: bold; letter-spacing: 0.5px; color: rgb(255, 255, 255);'>${voucherTitle}</div>`
+            textAlignment: 'PKTextAlignmentCenter'
           }
         ],
         primaryFields: [
           {
             key: 'discount',
             value: discountText,
-            textAlignment: 'PKTextAlignmentCenter',
-            attributedValue: `<div style='font-family: -apple-system; font-size: 50px; font-weight: bold; letter-spacing: -1px; color: rgb(255, 255, 255); margin-top: 10px;'>${discountText}</div>`
+            textAlignment: 'PKTextAlignmentCenter'
           }
         ],
-        auxiliaryFields: [],
-        backFields: [
+        auxiliaryFields: [
           {
-            key: 'offer_details',
-            label: 'OFFER DETAILS',
-            value: voucherTitle,
-            attributedValue: `<div style='font-family: -apple-system; font-size: 16px; font-weight: 500;'>${voucherTitle}</div>\n\n${description}`
-          },
-          {
-            key: 'validity',
-            label: 'VALID UNTIL',
+            key: 'expiry',
+            label: 'EXPIRES',
             value: new Date(expiryDate).toLocaleDateString('en-US', {
               year: 'numeric',
               month: 'long',
               day: 'numeric'
-            })
+            }),
+            dateStyle: 'PKDateStyleLong'
+          }
+        ],
+        backFields: [
+          {
+            key: 'offer_details',
+            label: 'OFFER DETAILS',
+            value: `${voucherTitle}\n\n${description}`
           },
           {
             key: 'terms',
@@ -227,8 +239,7 @@ const createVoucherPass = async ({
           {
             key: 'code',
             label: 'VOUCHER CODE',
-            value: voucherCode,
-            attributedValue: `<div style='font-family: monospace; font-size: 18px; font-weight: bold;'>${voucherCode}</div>`
+            value: voucherCode
           }
         ]
       },
@@ -257,12 +268,12 @@ const createVoucherPass = async ({
         // Logo - positioned at top left
         processImage(logo, 'logo', '1x', {
           fit: 'contain',
-          background: { r: 25, g: 25, b: 35, alpha: 0 }, // Transparent background
+          background: { r: 25, g: 25, b: 35, alpha: 0 },
           padding: 0
         }),
         processImage(logo, 'logo', '2x', {
           fit: 'contain',
-          background: { r: 25, g: 25, b: 35, alpha: 0 }, // Transparent background
+          background: { r: 25, g: 25, b: 35, alpha: 0 },
           padding: 0
         })
       ]);
@@ -308,11 +319,13 @@ const createBusinessPass = async ({
     // Create template
     const template = await createTemplate('generic');
 
-    // Create pass instance
+    // Create pass instance with enhanced design
     const pass = template.createPass({
       serialNumber: `business-${Date.now()}`,
       description: `Pass for ${businessName}`,
       organizationName: businessName,
+      // Add associated app if available
+      associatedStoreIdentifiers: process.env.APP_STORE_ID ? [parseInt(process.env.APP_STORE_ID)] : undefined,
       // Generic pass fields
       generic: {
         primaryFields: [
@@ -332,18 +345,18 @@ const createBusinessPass = async ({
       }
     });
 
-    // Add location if provided
+    // Add location if provided with enhanced experience
     if (latitude && longitude) {
       pass.locations = [
         {
           latitude,
           longitude,
-          relevantText: `You're near ${businessName}`
+          relevantText: `Welcome to ${businessName}!`
         }
       ];
     }
 
-    // Process and add images
+    // Process and add images with proper sizing
     const [logo1x, logo2x, icon1x, icon2x] = await Promise.all([
       processImage(logo, 'logo', '1x'),
       processImage(logo, 'logo', '2x'),
@@ -352,21 +365,11 @@ const createBusinessPass = async ({
     ]);
 
     // Add images if available
-    if (logo1x) {
-      await pass.images.add('logo', logo1x);
-    }
-    if (logo2x) {
-      await pass.images.add('logo', logo2x, '2x');
-    }
+    if (logo1x) await pass.images.add('logo', logo1x);
+    if (logo2x) await pass.images.add('logo', logo2x, '2x');
+    if (icon1x) await pass.images.add('icon', icon1x);
+    if (icon2x) await pass.images.add('icon', icon2x, '2x');
 
-    if (icon1x) {
-      await pass.images.add('icon', icon1x);
-    }
-    if (icon2x) {
-      await pass.images.add('icon', icon2x, '2x');
-    }
-
-    // Generate and return pass
     return await pass.asBuffer();
 
   } catch (error) {
