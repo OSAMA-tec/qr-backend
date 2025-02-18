@@ -876,12 +876,30 @@ const redeemVoucher = async (req, res) => {
 const getClaimedVoucherUsers = async (req, res) => {
   try {
     const businessId = req.user.userId;
-    const { search, page = 1, limit = 10 } = req.query;
+    const { search, page = 1, limit = 10, voucherCode } = req.query;
 
     // Build search query 🔍
     const query = {
       'voucherClaims.businessId': businessId
     };
+
+    // If voucher code is provided, first find the voucher
+    if (voucherCode) {
+      const voucher = await Coupon.findOne({ 
+        code: voucherCode.toUpperCase(),
+        businessId 
+      });
+
+      if (!voucher) {
+        return res.status(404).json({
+          success: false,
+          message: 'Voucher not found! 🔍'
+        });
+      }
+
+      // Add voucher ID to query
+      query['voucherClaims.voucherId'] = voucher._id;
+    }
 
     // Add search filter if provided 🎯
     if (search) {
@@ -911,10 +929,14 @@ const getClaimedVoucherUsers = async (req, res) => {
     const processedUsers = users.map(user => {
       const userData = user.toObject();
       
-      // Filter voucher claims for this business
-      userData.voucherClaims = userData.voucherClaims.filter(
-        claim => claim.businessId.toString() === businessId
-      );
+      // Filter voucher claims for this business and code if provided
+      userData.voucherClaims = userData.voucherClaims.filter(claim => {
+        const businessMatch = claim.businessId.toString() === businessId;
+        const codeMatch = voucherCode ? 
+          claim.voucherId?.code?.toUpperCase() === voucherCode.toUpperCase() : 
+          true;
+        return businessMatch && codeMatch;
+      });
 
       // Add claim stats
       userData.claimStats = {
@@ -927,21 +949,24 @@ const getClaimedVoucherUsers = async (req, res) => {
       return userData;
     });
 
+    // Filter out users with no matching claims after processing
+    const filteredUsers = processedUsers.filter(user => user.voucherClaims.length > 0);
+
     res.json({
       success: true,
       data: {
-        users: processedUsers,
+        users: filteredUsers,
         pagination: {
-          total: totalCount,
+          total: filteredUsers.length,
           page: parseInt(page),
-          pages: Math.ceil(totalCount / limit)
+          pages: Math.ceil(filteredUsers.length / limit)
         },
         summary: {
-          totalUsers: totalCount,
-          activeUsers: processedUsers.filter(
+          totalUsers: filteredUsers.length,
+          activeUsers: filteredUsers.filter(
             user => user.voucherClaims.some(claim => claim.status === 'claimed')
           ).length,
-          redeemedUsers: processedUsers.filter(
+          redeemedUsers: filteredUsers.filter(
             user => user.voucherClaims.some(claim => claim.status === 'redeemed')
           ).length
         }
@@ -956,6 +981,7 @@ const getClaimedVoucherUsers = async (req, res) => {
     });
   }
 };
+
 // Scan and validate QR code 📱
 const scanVoucher = async (req, res) => {
   try {
