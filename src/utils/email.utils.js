@@ -54,7 +54,7 @@ const getEmailTemplate = (content) => `
 
 // Send verification email 📨
 const sendVerificationEmail = async (email, token) => {
-  const verificationUrl = `${process.env.CLIENT_URL}/api/auth/verify-email/${token}`;
+  const verificationUrl = `https://www.mrintroduction.com/api/auth/verify-email/${token}`;
   
   const content = `
     <div style="text-align: center;">
@@ -116,7 +116,7 @@ const sendVerificationEmail = async (email, token) => {
 const sendPasswordResetEmail = async (email, token) => {
   try {
     // Create reset URL with token in params
-    const resetUrl = `${process.env.CLIENT_URL}/reset-password/${token}`;
+    const resetUrl = `https://www.mrintroduction.coms/reset-password/${token}`;
 
     // Email template with updated link
     const emailTemplate = `
