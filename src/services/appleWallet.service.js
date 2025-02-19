@@ -184,36 +184,18 @@ const createVoucherPass = async ({
       serialNumber: `voucher-${voucherCode}-${Date.now()}`,
       description: voucherTitle,
       organizationName: businessName,
-      logoText: '',
       relevantDate: expiryDate,
       expirationDate: new Date(expiryDate).toISOString(),
       sharingProhibited: false,
       voided: false,
-      // Enhanced color scheme for better contrast
       backgroundColor: 'rgb(25, 25, 35)',
       foregroundColor: 'rgb(255, 255, 255)',
-      labelColor: 'rgb(180, 180, 200)',
-      // Add associated app if available
+      labelColor: 'rgb(200, 200, 200)',
+      logoText: '',
       associatedStoreIdentifiers: process.env.APP_STORE_ID ? [parseInt(process.env.APP_STORE_ID)] : undefined,
-      // Add user info if available
       userInfo: { voucherCode },
       coupon: {
         headerFields: [
-          {
-            key: 'voucherTitle',
-            label: '',
-            value: voucherTitle,
-            textAlignment: 'PKTextAlignmentCenter'
-          }
-        ],
-        primaryFields: [
-          {
-            key: 'discount',
-            value: discountText,
-            textAlignment: 'PKTextAlignmentCenter'
-          }
-        ],
-        auxiliaryFields: [
           {
             key: 'expiry',
             label: 'EXPIRES',
@@ -222,15 +204,18 @@ const createVoucherPass = async ({
               month: 'long',
               day: 'numeric'
             }),
-            dateStyle: 'PKDateStyleLong'
+            textAlignment: 'PKTextAlignmentRight'
+          }
+        ],
+        primaryFields: [
+          {
+            key: 'discount',
+            label: '',
+            value: `${discountValue}% off`,
+            textAlignment: 'PKTextAlignmentLeft'
           }
         ],
         backFields: [
-          {
-            key: 'offer_details',
-            label: 'OFFER DETAILS',
-            value: `${voucherTitle}\n\n${description}`
-          },
           {
             key: 'terms',
             label: 'TERMS & CONDITIONS',
@@ -252,37 +237,31 @@ const createVoucherPass = async ({
     });
 
     try {
-      // Process only necessary images - no strip image to prevent duplicates
-      const [icon1x, icon2x, logo1x, logo2x] = await Promise.all([
-        // Icon for the pass
-        processImage(icon || logo, 'icon', '1x', {
-          fit: 'contain',
-          background: { r: 25, g: 25, b: 35, alpha: 1 },
-          padding: 4
-        }),
-        processImage(icon || logo, 'icon', '2x', {
-          fit: 'contain',
-          background: { r: 25, g: 25, b: 35, alpha: 1 },
-          padding: 4
-        }),
-        // Logo - positioned at top left
+      // Process logo and icon images with minimal settings
+      const [logo1x, logo2x, icon1x, icon2x] = await Promise.all([
         processImage(logo, 'logo', '1x', {
           fit: 'contain',
-          background: { r: 25, g: 25, b: 35, alpha: 0 },
-          padding: 0
+          background: { r: 25, g: 25, b: 35, alpha: 0 }
         }),
         processImage(logo, 'logo', '2x', {
           fit: 'contain',
-          background: { r: 25, g: 25, b: 35, alpha: 0 },
-          padding: 0
+          background: { r: 25, g: 25, b: 35, alpha: 0 }
+        }),
+        processImage(icon || logo, 'icon', '1x', {
+          fit: 'contain',
+          background: { r: 25, g: 25, b: 35, alpha: 1 }
+        }),
+        processImage(icon || logo, 'icon', '2x', {
+          fit: 'contain',
+          background: { r: 25, g: 25, b: 35, alpha: 1 }
         })
       ]);
 
-      // Add images - remove strip image
-      if (icon1x) await pass.images.add('icon', icon1x);
-      if (icon2x) await pass.images.add('icon', icon2x, '2x');
+      // Add images - only logo and icon
       if (logo1x) await pass.images.add('logo', logo1x);
       if (logo2x) await pass.images.add('logo', logo2x, '2x');
+      if (icon1x) await pass.images.add('icon', icon1x);
+      if (icon2x) await pass.images.add('icon', icon2x, '2x');
     } catch (imageError) {
       console.warn('Error processing images:', imageError);
     }
