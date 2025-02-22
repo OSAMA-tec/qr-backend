@@ -202,13 +202,15 @@ const createCampaign = async (req, res) => {
 
 // Track campaign click 🖱️
 const trackCampaignClick = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
-
+  let session = null;
   try {
     const { referralCode } = req.params;
     const userAgent = req.headers['user-agent'];
     const ipAddress = req.ip;
+
+    // Start session and transaction
+    session = await mongoose.startSession();
+    await session.startTransaction();
 
     // Find campaign by referral code for any type 🔍
     const campaign = await Campaign.findOne({
@@ -218,9 +220,10 @@ const trackCampaignClick = async (req, res) => {
         { 'agencyDetails.referralCode': referralCode },
         { 'businessDetails.referralCode': referralCode }
       ]
-    }).populate('businessId', 'businessProfile email');
+    }).populate('businessId', 'businessProfile email').session(session);
 
     if (!campaign) {
+      await session.abortTransaction();
       return res.status(404).json({
         success: false,
         message: 'Campaign not found or inactive! 🚫'
@@ -228,8 +231,9 @@ const trackCampaignClick = async (req, res) => {
     }
 
     // Get voucher details and update its analytics 🎫
-    const voucher = await Coupon.findById(campaign.voucherId);
+    const voucher = await Coupon.findById(campaign.voucherId).session(session);
     if (!voucher) {
+      await session.abortTransaction();
       return res.status(404).json({
         success: false,
         message: 'Voucher not found! 🚫'
@@ -244,6 +248,7 @@ const trackCampaignClick = async (req, res) => {
       case 'influencer':
         const influencer = campaign.influencers.find(inf => inf.referralCode === referralCode);
         if (!influencer) {
+          await session.abortTransaction();
           return res.status(404).json({
             success: false,
             message: 'Invalid referral code! 🚫'
@@ -262,6 +267,7 @@ const trackCampaignClick = async (req, res) => {
 
       case 'google_ads':
         if (campaign.googleAdsDetails.referralCode !== referralCode) {
+          await session.abortTransaction();
           return res.status(404).json({
             success: false,
             message: 'Invalid referral code! 🚫'
@@ -278,6 +284,7 @@ const trackCampaignClick = async (req, res) => {
 
       case 'agency':
         if (campaign.agencyDetails.referralCode !== referralCode) {
+          await session.abortTransaction();
           return res.status(404).json({
             success: false,
             message: 'Invalid referral code! 🚫'
@@ -294,6 +301,7 @@ const trackCampaignClick = async (req, res) => {
 
       case 'business':
         if (campaign.businessDetails.referralCode !== referralCode) {
+          await session.abortTransaction();
           return res.status(404).json({
             success: false,
             message: 'Invalid referral code! 🚫'
@@ -344,12 +352,11 @@ const trackCampaignClick = async (req, res) => {
     // Update voucher analytics
     voucher.analytics.clicks++;
     
-    // Update marketplace analytics if voucher is in marketplace
     if (voucher.marketplace) {
       voucher.analytics.marketplace.clicks++;
     }
 
-    // Save all updates with session
+    // Save all updates within transaction
     await Promise.all([
       campaign.save({ session }),
       voucher.save({ session })
@@ -400,6 +407,7 @@ const trackCampaignClick = async (req, res) => {
       }
     };
 
+    // Commit transaction
     await session.commitTransaction();
 
     // Encode the data as base64 🔐
@@ -410,12 +418,27 @@ const trackCampaignClick = async (req, res) => {
     res.redirect(claimUrl);
 
   } catch (error) {
-    await session.abortTransaction();
     console.error('Track campaign click error:', error);
-    // In case of error, redirect to error page
-    res.redirect(`${process.env.CLIENT_URL}/campaign/error?message=${encodeURIComponent('Failed to process campaign link! 😢')}`);
+    if (session) {
+      try {
+        await session.abortTransaction();
+      } catch (abortError) {
+        console.error('Error aborting transaction:', abortError);
+      }
+    }
+    // In case of error, redirect to error page with more specific error message
+    const errorMessage = process.env.NODE_ENV === 'development' 
+      ? `Error: ${error.message}`
+      : 'Failed to process campaign link! 😢';
+    res.redirect(`${process.env.CLIENT_URL}/campaign/error?message=${encodeURIComponent(errorMessage)}`);
   } finally {
-    session.endSession();
+    if (session) {
+      try {
+        session.endSession();
+      } catch (endError) {
+        console.error('Error ending session:', endError);
+      }
+    }
   }
 };
 
