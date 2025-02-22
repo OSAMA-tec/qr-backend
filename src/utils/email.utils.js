@@ -54,7 +54,7 @@ const getEmailTemplate = (content) => `
 
 // Send verification email 📨
 const sendVerificationEmail = async (email, token) => {
-  const verificationUrl = `https://api.mrintroduction.com/api/auth/verify-email/${token}`;
+  const verificationUrl = `https://coupon.mrintroduction.com/api/auth/verify-email/${token}`;
   
   const content = `
     <div style="text-align: center;">
