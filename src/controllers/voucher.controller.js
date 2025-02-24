@@ -42,12 +42,12 @@ const createVoucher = async (req, res) => {
     
     // Validate dates
     const now = new Date();
-    if (startDate < now) {
-      return res.status(400).json({
-        success: false,
-        message: 'Start date must be in the future! ⚠️'
-      });
-    }
+    // if (startDate < now) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: 'Start date must be in the future! ⚠️'
+    //   });
+    // }
 
     if (endDate <= startDate) {
       return res.status(400).json({
