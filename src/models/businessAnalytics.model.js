@@ -28,6 +28,10 @@ const businessAnalyticsSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  totalMessagesSent: {
+    type: Number,
+    default: 0
+  },
 
   // Monthly Stats 📅
   monthlyStats: [{
@@ -158,6 +162,24 @@ const businessAnalyticsSchema = new mongoose.Schema({
     }
   }],
 
+  dailyMessageStats: [{
+    date: {
+      type: Date,
+      required: true
+    },
+    messagesSent: {
+      type: Number,
+      default: 0
+    }
+  }],
+
+  messageLogs: [{
+    messageSid: { type: String, required: true },
+    timestamp: { type: Date, default: Date.now },
+    status: { type: String, required: true },
+    recipient: { type: String, required: true }
+  }],
+
   // Last Updated
   lastUpdated: {
     type: Date,
@@ -273,6 +295,20 @@ businessAnalyticsSchema.methods.trackSource = async function(source) {
     this.sourceStats[source] += 1;
   }
   this.lastUpdated = new Date();
+};
+
+// Update daily message stats
+businessAnalyticsSchema.methods.updateDailyMessageStats = async function() {
+  const today = new Date();
+  const existingStat = this.dailyMessageStats.find(stat => stat.date.toDateString() === today.toDateString());
+
+  if (existingStat) {
+    existingStat.messagesSent += 1;
+  } else {
+    this.dailyMessageStats.push({ date: today, messagesSent: 1 });
+  }
+
+  this.lastUpdated = today;
 };
 
 // Create model 🏗️

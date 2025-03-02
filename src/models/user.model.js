@@ -63,6 +63,7 @@ const userSchema = new mongoose.Schema({
   // Business Profile (if role is business)
   businessProfile: {
     businessName: String,
+    whatsappNumber: { type: String },
     description: String,
     category: String,
     logo: String,

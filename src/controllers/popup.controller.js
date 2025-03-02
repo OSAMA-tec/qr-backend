@@ -299,29 +299,30 @@ const getClaimedVoucher = async (req, res) => {
       });
     }
 
-    // Create rich QR data object 🔐
+    // ============ OPTIMIZED QR DATA ============
+    // Create minimal QR data with short property names
     const qrData = {
-      claimId,
-      voucherId: voucher._id,
-      code: voucher.code,
-      businessId: voucher.businessId._id,
-      userId: user._id,
-      type: 'claimed_voucher',
-      timestamp: new Date(),
-      expiryDate: voucher.endDate
+      id: claimId,                        // Claim ID
+      v: voucherId.toString(),            // Voucher ID
+      c: voucher.code,                    // Voucher code
+      b: voucher.businessId._id.toString(), // Business ID
+      u: userId.toString(),               // User ID
+      t: 'cv',                            // Type (claimed_voucher)
+      ts: Math.floor(Date.now()/1000),    // Timestamp as unix epoch
+      exp: Math.floor(new Date(voucher.endDate).getTime()/1000) // Expiry as unix epoch
     };
 
-    // Generate secure hash for verification 🔒
-    const dataString = JSON.stringify(qrData);
+    // Generate secure hash using only critical fields for verification
+    const securityString = `${claimId}|${voucherId}|${userId}|${voucher.businessId._id}|${Math.floor(new Date(voucher.endDate).getTime()/1000)}`;
     const hash = crypto
       .createHash('sha256')
-      .update(dataString)
+      .update(securityString)
       .digest('hex');
 
     // Add hash to QR data
-    qrData.hash = hash;
+    qrData.h = hash;
 
-    // Generate QR code with all data 📱
+    // Generate QR code with minimized data
     const qrCode = await QRCode.toDataURL(JSON.stringify(qrData));
 
     // Update voucher analytics 📊

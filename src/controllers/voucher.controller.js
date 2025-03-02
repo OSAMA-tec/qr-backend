@@ -986,19 +986,26 @@ const getClaimedVoucherUsers = async (req, res) => {
 const scanVoucher = async (req, res) => {
   try {
     const businessId = req.user.userId;
-    let voucherData;
-    // Get voucher data from either parsed QR data or direct request body 🔄
+    let qrData;
+    
+    // ============ GET QR DATA ============
+    // Try to get QR data from different possible sources
     if (req.parsedQrData) {
-      voucherData = req.parsedQrData;
+      // Already parsed QR data from middleware
+      qrData = req.parsedQrData;
     } else if (req.body.qrData) {
+      // QR data passed as a string in the qrData field
       try {
-        voucherData = JSON.parse(req.body.qrData);
+        qrData = JSON.parse(req.body.qrData);
       } catch (error) {
         return res.status(400).json({
           success: false,
           message: 'Invalid QR data format! Please check your input 🚫'
         });
       }
+    } else if (req.body.type || req.body.t) {
+      // Data sent directly in request body
+      qrData = req.body;
     } else {
       return res.status(400).json({
         success: false,
@@ -1006,29 +1013,47 @@ const scanVoucher = async (req, res) => {
       });
     }
     
-    // Validate QR data type 🏷️
-    if (!['voucher', 'claimed_voucher'].includes(voucherData.type)) {
+    // ============ NORMALIZE QR DATA FORMAT ============
+    // Convert full property names to short format if needed
+    const normalizedData = {
+      // Use short property names (if present) or convert from full names
+      id: qrData.id || qrData.claimId,
+      v: qrData.v || qrData.voucherId,
+      c: qrData.c || qrData.code,
+      b: qrData.b || qrData.businessId,
+      u: qrData.u || qrData.userId,
+      t: qrData.t || qrData.type,
+      ts: qrData.ts || qrData.timestamp,
+      exp: qrData.exp || qrData.expiry,
+      h: qrData.h || qrData.hash
+    };
+    
+    // Update qrData to use the normalized format
+    qrData = normalizedData;
+    
+    // ============ VALIDATE QR DATA ============
+    // Check if required fields exist in the QR data
+    const isClaimed = qrData.t === 'cv'; // Check if type is 'cv' (claimed_voucher)
+    
+    if (!qrData.c || !qrData.b || (isClaimed && (!qrData.u || !qrData.id || !qrData.h))) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid QR code type! 🚫'
+        message: 'Invalid QR code data structure! 🚫'
       });
     }
     
-    // Check if voucher belongs to scanning business 🏢
-    if (voucherData.businessId !== businessId) {
+    // Check if voucher belongs to scanning business
+    if (qrData.b !== businessId) {
       return res.status(403).json({
         success: false,
         message: 'This voucher is not valid for your business! 🏢'
       });
     }
-    console.log(voucherData.code)
-    // Find and validate voucher 🔍
+    
+    // Find voucher using code
     const voucher = await Coupon.findOne({
-      code: voucherData.code,
-      businessId,
-      // isActive: true,
-      // startDate: { $lte: new Date() },
-      // endDate: { $gte: new Date() }
+      code: qrData.c,
+      businessId
     });
 
     if (!voucher) {
@@ -1038,29 +1063,33 @@ const scanVoucher = async (req, res) => {
       });
     }
 
-    // Additional validation for claimed vouchers 🎫
-    if (voucherData.type === 'claimed_voucher') {
-      // Verify claim expiry
-      if (new Date(voucherData.expiryDate) < new Date()) {
+    // ============ HANDLE CLAIMED VOUCHER ============
+    if (isClaimed) {
+      // Verify expiration using epoch timestamp
+      const currentTime = Math.floor(Date.now()/1000);
+      if (qrData.exp < currentTime) {
         return res.status(400).json({
           success: false,
           message: 'Claimed voucher has expired! ⌛'
         });
       }
 
-      // Create verification hash using same method as generation 🔒
-      const hashData = { ...voucherData };
-      delete hashData.hash; // Remove hash before creating verification hash
+      // Recreate security string for hash verification
+      const voucherId = qrData.v;
+      const userId = qrData.u;
+      const claimId = qrData.id;
+      
+      const securityString = `${claimId}|${voucherId}|${userId}|${businessId}|${qrData.exp}`;
       const verificationHash = crypto
         .createHash('sha256')
-        .update(JSON.stringify(hashData))
+        .update(securityString)
         .digest('hex');
 
-      if (verificationHash !== voucherData.hash) {
+      if (verificationHash !== qrData.h) {
         console.log('Hash Verification Failed:', {
-          expected: voucherData.hash,
+          expected: qrData.h,
           calculated: verificationHash,
-          qrData: hashData
+          securityString
         });
         return res.status(400).json({
           success: false,
@@ -1068,8 +1097,8 @@ const scanVoucher = async (req, res) => {
         });
       }
 
-      // Get user details if it's a claimed voucher 👤
-      const user = await User.findById(voucherData.userId)
+      // Fetch user details
+      const user = await User.findById(userId)
         .select('firstName lastName email phoneNumber');
 
       if (!user) {
@@ -1090,11 +1119,11 @@ const scanVoucher = async (req, res) => {
             discountValue: voucher.discountValue,
             minimumPurchase: voucher.minimumPurchase,
             maximumDiscount: voucher.maximumDiscount,
-            type: voucherData.type,
+            type: 'claimed_voucher',
             claimInfo: {
-              claimId: voucherData.claimId,
-              userId: voucherData.userId,
-              expiryDate: voucherData.expiryDate
+              claimId: claimId,
+              userId: userId,
+              expiryDate: new Date(qrData.exp * 1000) // Convert epoch back to Date
             }
           },
           user: {
@@ -1108,7 +1137,8 @@ const scanVoucher = async (req, res) => {
       });
     }
 
-    // Return response without user details for non-claimed vouchers
+    // ============ HANDLE REGULAR VOUCHER ============
+    // Return response for non-claimed vouchers
     res.json({
       success: true,
       data: {
@@ -1119,7 +1149,7 @@ const scanVoucher = async (req, res) => {
           discountValue: voucher.discountValue,
           minimumPurchase: voucher.minimumPurchase,
           maximumDiscount: voucher.maximumDiscount,
-          type: voucherData.type
+          type: 'voucher'
         }
       }
     });

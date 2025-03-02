@@ -22,6 +22,8 @@ const subscriptionRoutes = require('./routes/subscription.routes');
 const marketplaceRoutes = require('./routes/marketplace.routes');
 // const googleWalletRoutes = require('./routes/googleWallet.routes');
 const appleWalletRoutes = require('./routes/appleWallet.routes');
+const whatsappRoutes = require('./routes/whatsapp.routes');
+const smsRoutes = require('./routes/sms.routes');
 const { cookieParser, handleCSRFError } = require('./middleware/csrf.middleware');
 
 // Initialize express app 🚀
@@ -126,6 +128,8 @@ app.use('/api/subscriptions', subscriptionRoutes);
 app.use('/api/marketplace', marketplaceRoutes);
 // app.use('/api/wallet/google', googleWalletRoutes);
 app.use('/api/wallet/apple', appleWalletRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/sms', smsRoutes);
 
 // Serve static files from public directory 📁
 app.use(express.static('public'));
@@ -158,6 +162,11 @@ socketErrorHandler(io);
 io.on('connection', (socket) => {
   console.log('New socket connection:', socket.user.userId);
   chatSocketHandler(io, socket);
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.status(200).json({ status: 'OK' });
 });
 
 // Export both app and server 📤

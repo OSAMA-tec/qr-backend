@@ -7,23 +7,23 @@ const path = require('path');
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
+    fileSize: 15 * 1024 * 1024, // 15MB limit for uploads
   },
   fileFilter: (req, file, cb) => {
     // Check file type 🖼️
-    const filetypes = /jpeg|jpg|png|gif/;
+    const filetypes = /jpeg|jpg|png|gif|mp4|mov|pdf|doc|docx/; 
     const mimetype = filetypes.test(file.mimetype);
     const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
 
     if (mimetype && extname) {
       return cb(null, true);
     }
-    cb(new Error('Only image files are allowed! 🖼️'));
+    cb(new Error('Only image, video, and document files are allowed! 🖼️'));
   },
 });
 
 // Upload to Firebase Storage 🔥
-const uploadToFirebase = async (file, folder = 'profile_pics') => {
+const uploadToFirebase = async (file, folder = 'uploads') => {
   try {
     // Create unique filename
     const timestamp = Date.now();
@@ -55,7 +55,7 @@ const uploadToFirebase = async (file, folder = 'profile_pics') => {
       blobStream.end(file.buffer);
     });
   } catch (error) {
-    throw new Error(`Failed to upload image! 😢 ${error.message}`);
+    throw new Error(`Failed to upload file! 😢 ${error.message}`);
   }
 };
 
