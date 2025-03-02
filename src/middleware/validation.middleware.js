@@ -33,13 +33,13 @@ const registerValidation = [
     .trim()
     .notEmpty()
     .withMessage('First name is required 👤')
-    .isLength({ min: 2 })
+    .isLength({ min: 1 })
     .withMessage('First name must be at least 2 characters long'),
   body('lastName')
     .trim()
     .notEmpty()
     .withMessage('Last name is required 👤')
-    .isLength({ min: 2 })
+    .isLength({ min: 1 })
     .withMessage('Last name must be at least 2 characters long'),
   body('role')
     .optional()
@@ -905,12 +905,12 @@ const campaignFormValidation = [
   body('formData.firstName')
     .trim()
     .notEmpty().withMessage('First name is required! 👤')
-    .isLength({ min: 2, max: 50 }).withMessage('First name must be between 2 and 50 characters! 📏'),
+    .isLength({ max: 50 }).withMessage('First name must be between 2 and 50 characters! 📏'),
   
   body('formData.lastName')
     .trim()
     .notEmpty().withMessage('Last name is required! 👤')
-    .isLength({ min: 2, max: 50 }).withMessage('Last name must be between 2 and 50 characters! 📏'),
+    .isLength({ max: 50 }).withMessage('Last name must be between 2 and 50 characters! 📏'),
   
   body('formData.email')
     .trim()
