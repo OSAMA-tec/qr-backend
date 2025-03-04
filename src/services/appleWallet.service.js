@@ -157,6 +157,7 @@ const createTemplate = async (type) => {
 };
 
 // Create pass for voucher 🎟️
+// Create pass for voucher 🎟️
 const createVoucherPass = async ({
   businessName,
   voucherTitle,
@@ -178,6 +179,11 @@ const createVoucherPass = async ({
   try {
     // Create template
     const template = await createTemplate('coupon');
+    
+    // Format discount value based on type
+    const formattedDiscount = discountType === 'percentage' 
+      ? `${discountValue}% OFF` 
+      : `$${discountValue} OFF`;
 
     // Create pass instance with enhanced design layout
     const pass = template.createPass({
@@ -188,9 +194,9 @@ const createVoucherPass = async ({
       expirationDate: new Date(expiryDate).toISOString(),
       sharingProhibited: false,
       voided: false,
-      backgroundColor: 'rgb(25, 25, 35)',
+      backgroundColor: 'rgb(35, 35, 45)', // Slightly darker for contrast
       foregroundColor: 'rgb(255, 255, 255)',
-      labelColor: 'rgb(200, 200, 200)',
+      labelColor: 'rgb(220, 220, 220)', // Brighter labels for better visibility
       logoText: '',
       associatedStoreIdentifiers: process.env.APP_STORE_ID ? [parseInt(process.env.APP_STORE_ID)] : undefined,
       userInfo: { voucherCode },
@@ -198,10 +204,10 @@ const createVoucherPass = async ({
         headerFields: [
           {
             key: 'expiry',
-            label: 'EXPIRES',
+            label: 'VALID UNTIL',
             value: new Date(expiryDate).toLocaleDateString('en-US', {
               year: 'numeric',
-              month: 'long',
+              month: 'short',
               day: 'numeric'
             }),
             textAlignment: 'PKTextAlignmentRight'
@@ -211,20 +217,35 @@ const createVoucherPass = async ({
           {
             key: 'discount',
             label: '',
-            value: `${discountValue}% off`,
-            textAlignment: 'PKTextAlignmentLeft'
+            value: formattedDiscount,
+            textAlignment: 'PKTextAlignmentCenter'
           }
         ],
+        secondaryFields: [
+          {
+            key: 'business',
+            label: 'BUSINESS',
+            value: businessName,
+            textAlignment: 'PKTextAlignmentLeft'
+          },
+          {
+            key: 'code',
+            label: 'CODE',
+            value: voucherCode,
+            textAlignment: 'PKTextAlignmentRight'
+          }
+        ],
+        // Removed auxiliaryFields that had "SCAN HERE" text
         backFields: [
+          {
+            key: 'description',
+            label: 'DETAILS',
+            value: description || `Save ${discountText} at ${businessName}`
+          },
           {
             key: 'terms',
             label: 'TERMS & CONDITIONS',
             value: `• Minimum Purchase: $${minimumPurchase}\n• Maximum Discount: $${maximumDiscount}\n• Not combinable with other offers\n• Valid at participating locations`
-          },
-          {
-            key: 'code',
-            label: 'VOUCHER CODE',
-            value: voucherCode
           }
         ]
       },
@@ -232,47 +253,64 @@ const createVoucherPass = async ({
         message: secureQrCode,
         format: 'PKBarcodeFormatQR',
         messageEncoding: 'iso-8859-1',
-        altText: voucherCode
+        altText: voucherCode,
+        // More compact QR code
+        width: 100,
+        height: 100,
+        position: 'footer', // Move to footer for better design
+        margin: 0
       }]
     });
 
+    // Process and add images with improved background handling
     try {
-      // Process logo and icon images with minimal settings
       const [logo1x, logo2x, icon1x, icon2x] = await Promise.all([
         processImage(logo, 'logo', '1x', {
           fit: 'contain',
-          background: { r: 25, g: 25, b: 35, alpha: 0 }
+          background: { r: 35, g: 35, b: 45, alpha: 0 }
         }),
         processImage(logo, 'logo', '2x', {
           fit: 'contain',
-          background: { r: 25, g: 25, b: 35, alpha: 0 }
+          background: { r: 35, g: 35, b: 45, alpha: 0 }
         }),
         processImage(icon || logo, 'icon', '1x', {
-          fit: 'contain',
-          background: { r: 25, g: 25, b: 35, alpha: 1 }
+          fit: 'cover', // Better icon filling
+          background: { r: 35, g: 35, b: 45, alpha: 1 }
         }),
         processImage(icon || logo, 'icon', '2x', {
-          fit: 'contain',
-          background: { r: 25, g: 25, b: 35, alpha: 1 }
+          fit: 'cover', // Better icon filling  
+          background: { r: 35, g: 35, b: 45, alpha: 1 }
         })
       ]);
 
-      // Add images - only logo and icon
       if (logo1x) await pass.images.add('logo', logo1x);
       if (logo2x) await pass.images.add('logo', logo2x, '2x');
       if (icon1x) await pass.images.add('icon', icon1x);
       if (icon2x) await pass.images.add('icon', icon2x, '2x');
+      
+      // Add strip image if we have a logo to create a more visually appealing pass
+      if (logo) {
+        const stripImage = await processImage(logo, 'strip', '1x', {
+          fit: 'cover',
+          position: 'center',
+          background: { r: 35, g: 35, b: 45, alpha: 0.2 }
+        });
+        
+        if (stripImage) {
+          await pass.images.add('strip', stripImage);
+        }
+      }
     } catch (imageError) {
       console.warn('Error processing images:', imageError);
     }
 
-    // Add location if provided with enhanced relevant text
+    // Add location with enhanced relevant text
     if (latitude && longitude) {
       pass.locations = [
         {
           latitude,
           longitude,
-          relevantText: `Save ${discountText} at ${businessName}!`
+          relevantText: `${formattedDiscount} at ${businessName}`
         }
       ];
     }
@@ -286,13 +324,15 @@ const createVoucherPass = async ({
 };
 
 // Create pass for business 🎫
+// Create pass for business 🎫
 const createBusinessPass = async ({
   businessName,
   logo,
   icon,
   locationName,
   latitude,
-  longitude
+  longitude,
+  description
 }) => {
   try {
     // Create template
@@ -301,30 +341,42 @@ const createBusinessPass = async ({
     // Create pass instance with enhanced design
     const pass = template.createPass({
       serialNumber: `business-${Date.now()}`,
-      description: `Pass for ${businessName}`,
+      description: description || `Pass for ${businessName}`,
       organizationName: businessName,
-      // Add associated app if available
+      backgroundColor: 'rgb(35, 35, 45)',
+      foregroundColor: 'rgb(255, 255, 255)',
+      labelColor: 'rgb(220, 220, 220)',
       associatedStoreIdentifiers: process.env.APP_STORE_ID ? [parseInt(process.env.APP_STORE_ID)] : undefined,
       // Generic pass fields
       generic: {
         primaryFields: [
           {
             key: 'business',
-            label: 'BUSINESS',
-            value: businessName
+            label: '',
+            value: businessName,
+            textAlignment: 'PKTextAlignmentCenter'
           }
         ],
         secondaryFields: [
           {
             key: 'location',
             label: 'LOCATION',
-            value: locationName || 'Visit our store'
+            value: locationName || 'Visit our store',
+            textAlignment: 'PKTextAlignmentCenter'
+          }
+        ],
+        auxiliaryFields: [
+          {
+            key: 'info',
+            label: 'INFO',
+            value: description || 'Scan at location for special offers',
+            textAlignment: 'PKTextAlignmentCenter'
           }
         ]
       }
     });
 
-    // Add location if provided with enhanced experience
+    // Add location with enhanced experience
     if (latitude && longitude) {
       pass.locations = [
         {
@@ -335,19 +387,37 @@ const createBusinessPass = async ({
       ];
     }
 
-    // Process and add images with proper sizing
-    const [logo1x, logo2x, icon1x, icon2x] = await Promise.all([
-      processImage(logo, 'logo', '1x'),
-      processImage(logo, 'logo', '2x'),
-      processImage(icon || logo, 'icon', '1x'),
-      processImage(icon || logo, 'icon', '2x')
+    // Process and add images with enhanced visuals
+    const [logo1x, logo2x, icon1x, icon2x, strip] = await Promise.all([
+      processImage(logo, 'logo', '1x', {
+        fit: 'contain',
+        background: { r: 35, g: 35, b: 45, alpha: 0 }
+      }),
+      processImage(logo, 'logo', '2x', {
+        fit: 'contain',
+        background: { r: 35, g: 35, b: 45, alpha: 0 }
+      }),
+      processImage(icon || logo, 'icon', '1x', {
+        fit: 'cover',
+        background: { r: 35, g: 35, b: 45, alpha: 1 }
+      }),
+      processImage(icon || logo, 'icon', '2x', {
+        fit: 'cover',
+        background: { r: 35, g: 35, b: 45, alpha: 1 }
+      }),
+      processImage(logo, 'strip', '1x', {
+        fit: 'cover',
+        position: 'center',
+        background: { r: 35, g: 35, b: 45, alpha: 0.2 }
+      })
     ]);
 
-    // Add images if available
+    // Add images
     if (logo1x) await pass.images.add('logo', logo1x);
     if (logo2x) await pass.images.add('logo', logo2x, '2x');
     if (icon1x) await pass.images.add('icon', icon1x);
     if (icon2x) await pass.images.add('icon', icon2x, '2x');
+    if (strip) await pass.images.add('strip', strip);
 
     return await pass.asBuffer();
 
