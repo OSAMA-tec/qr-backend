@@ -160,32 +160,9 @@ const generateVoucherPass = async (req, res) => {
       });
     }
 
-    // ============ OPTIMIZED QR DATA ============
-    // Generate claim ID and create minimal QR data with short property names
-    const claimId = crypto.randomBytes(16).toString('hex');
-    const qrData = {
-      id: claimId,                        // Claim ID
-      v: voucherId.toString(),            // Voucher ID
-      c: voucher.code,                    // Voucher code
-      b: businessId.toString(),           // Business ID
-      u: userId.toString(),               // User ID
-      t: 'cv',                            // Type (claimed_voucher)
-      ts: Math.floor(Date.now()/1000),    // Timestamp as unix epoch
-      exp: Math.floor(new Date(voucher.endDate).getTime()/1000) // Expiry as unix epoch
-    };
-
-    // Generate secure hash using only critical fields for verification
-    const securityString = `${claimId}|${voucherId}|${userId}|${businessId}|${Math.floor(new Date(voucher.endDate).getTime()/1000)}`;
-    const hash = crypto
-      .createHash('sha256')
-      .update(securityString)
-      .digest('hex');
-
-    // Add hash to QR data
-    qrData.h = hash;
-
-    // Create the secure QR code string
-    const secureQrCode = JSON.stringify(qrData);
+    // ============ GENERATE MINIMAL QR CODE ============
+    // Create QR data with just voucherId and userId in simple string format
+    const secureQrCode = `${voucherId}:${userId}`;
 
     // Format discount text
     const discountText = voucher.discountType === 'percentage' 

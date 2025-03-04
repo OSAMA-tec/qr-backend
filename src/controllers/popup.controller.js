@@ -299,31 +299,12 @@ const getClaimedVoucher = async (req, res) => {
       });
     }
 
-    // ============ OPTIMIZED QR DATA ============
-    // Create minimal QR data with short property names
-    const qrData = {
-      id: claimId,                        // Claim ID
-      v: voucherId.toString(),            // Voucher ID
-      c: voucher.code,                    // Voucher code
-      b: voucher.businessId._id.toString(), // Business ID
-      u: userId.toString(),               // User ID
-      t: 'cv',                            // Type (claimed_voucher)
-      ts: Math.floor(Date.now()/1000),    // Timestamp as unix epoch
-      exp: Math.floor(new Date(voucher.endDate).getTime()/1000) // Expiry as unix epoch
-    };
+    // ============ GENERATE MINIMAL QR CODE ============
+    // Create QR data with just voucherId and userId in simple string format
+    const qrData = `${voucherId}:${userId}`;
 
-    // Generate secure hash using only critical fields for verification
-    const securityString = `${claimId}|${voucherId}|${userId}|${voucher.businessId._id}|${Math.floor(new Date(voucher.endDate).getTime()/1000)}`;
-    const hash = crypto
-      .createHash('sha256')
-      .update(securityString)
-      .digest('hex');
-
-    // Add hash to QR data
-    qrData.h = hash;
-
-    // Generate QR code with minimized data
-    const qrCode = await QRCode.toDataURL(JSON.stringify(qrData));
+    // Generate QR code with bare minimum data
+    const qrCode = await QRCode.toDataURL(qrData);
 
     // Update voucher analytics 📊
     await Coupon.updateOne(
@@ -333,13 +314,6 @@ const getClaimedVoucher = async (req, res) => {
           'analytics.redemptions': 1,
           'analytics.qrCodeGenerations': 1,
           currentUsage: 1
-        },
-        $push: {
-          'qrHistory': {
-            userId: user._id,
-            generatedAt: new Date(),
-            hash: hash
-          }
         }
       }
     );
@@ -361,8 +335,7 @@ const getClaimedVoucher = async (req, res) => {
       {
         $set: {
           'voucherClaims.$.qrGenerated': true,
-          'voucherClaims.$.qrGeneratedAt': new Date(),
-          'voucherClaims.$.hash': hash
+          'voucherClaims.$.qrGeneratedAt': new Date()
         }
       }
     );
@@ -393,7 +366,7 @@ const getClaimedVoucher = async (req, res) => {
           usageLimit: voucher.usageLimit,
           currentUsage: voucher.currentUsage,
           qrCode,
-          hash
+          hash: ''
         },
         business: {
           id: voucher.businessId._id,

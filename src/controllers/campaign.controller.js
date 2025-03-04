@@ -725,34 +725,12 @@ const submitCampaignForm = async (req, res) => {
     // Save analytics
     await businessAnalytics.save({ session });
 
-    // Generate claim ID 🎫
-    const claimId = crypto.randomBytes(16).toString('hex');
+    // ============ GENERATE MINIMAL QR CODE ============
+    // Create QR data with just voucherId and userId in simple string format
+    const qrData = `${campaign.voucherId._id}:${user._id}`;
 
-    // ============ OPTIMIZED QR DATA ============
-    // Create minimal QR data with short property names
-    const qrData = {
-      id: claimId,                        // Claim ID
-      v: campaign.voucherId._id.toString(),            // Voucher ID
-      c: campaign.voucherId.code,                    // Voucher code
-      b: campaign.businessId.toString(), // Business ID
-      u: user._id.toString(),               // User ID
-      t: 'cv',                            // Type (claimed_voucher)
-      ts: Math.floor(Date.now()/1000),    // Timestamp as unix epoch
-      exp: Math.floor(new Date(campaign.voucherId.endDate).getTime()/1000) // Expiry as unix epoch
-    };
-
-    // Generate secure hash using only critical fields for verification
-    const securityString = `${claimId}|${campaign.voucherId._id}|${user._id}|${campaign.businessId}|${Math.floor(new Date(campaign.voucherId.endDate).getTime()/1000)}`;
-    const hash = crypto
-      .createHash('sha256')
-      .update(securityString)
-      .digest('hex');
-
-    // Add hash to QR data
-    qrData.h = hash;
-
-    // Generate QR code with minimized data
-    const qrCode = await QRCode.toDataURL(JSON.stringify(qrData));
+    // Generate QR code with bare minimum data
+    const qrCode = await QRCode.toDataURL(qrData);
 
     // Update voucher analytics 📊
     await Coupon.updateOne(
@@ -762,13 +740,6 @@ const submitCampaignForm = async (req, res) => {
           'analytics.redemptions': 1,
           'analytics.qrCodeGenerations': 1,
           currentUsage: 1
-        },
-        $push: {
-          'qrHistory': {
-            userId: user._id,
-            generatedAt: new Date(),
-            hash: hash
-          }
         }
       },
       { session }
@@ -787,8 +758,7 @@ const submitCampaignForm = async (req, res) => {
       {
         $set: {
           'voucherClaims.$.qrGenerated': true,
-          'voucherClaims.$.qrGeneratedAt': new Date(),
-          'voucherClaims.$.hash': hash
+          'voucherClaims.$.qrGeneratedAt': new Date()
         }
       },
       { session }
@@ -820,10 +790,10 @@ const submitCampaignForm = async (req, res) => {
           usageLimit: campaign.voucherId.usageLimit,
           currentUsage: campaign.voucherId.currentUsage,
           qrCode,
-          hash
+          hash: ''
         },
         claim: {
-          id: claimId,
+          id: crypto.randomBytes(16).toString('hex'),
           generatedAt: new Date(),
           status: 'active'
         },
