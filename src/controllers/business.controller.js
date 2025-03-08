@@ -110,8 +110,10 @@ const listCustomers = async (req, res) => {
 
     // Convert businessId to ObjectId 🔄
     const businessObjectId = new mongoose.Types.ObjectId(businessId);
-
-    // Build base query for both regular and guest users 🔍
+    
+    // ============
+    // First collect all customers that are linked to this business
+    // ============
     const baseQuery = {
       $or: [
         { "voucherClaims.businessId": businessObjectId },
@@ -119,17 +121,158 @@ const listCustomers = async (req, res) => {
       ],
     };
 
-    // Add influencer filter if provided 🎯
+    // ============
+    // Special handling for influencer filter
+    // ============
     if (influencer) {
-      baseQuery.$and = baseQuery.$and || [];
-      baseQuery.$and.push({
+      // We'll completely replace the baseQuery when filtering by influencer
+      // to ensure we ONLY get customers related to this influencer
+      
+      // Step 1: Get a list of IDs to filter by
+      let customerIdsToInclude = new Set();
+      
+      // Step 2: Find all campaign leads related to this influencer
+      const campaignLeadsWithInfluencer = await CampaignLead.find({
+        businessId: businessObjectId,
         $or: [
-          { "guestDetails.source.influencerName": new RegExp(influencer, "i") },
-          { "guestDetails.source.influencerPlatform": new RegExp(influencer, "i") }
+          { "influencerDetails.name": new RegExp(influencer, "i") },
+          { "influencerDetails.platform": new RegExp(influencer, "i") },
+          { "referralCode": new RegExp(influencer, "i") }
         ]
-      });
-    }
+      }).lean();
 
+      // Step 3: Extract user IDs and emails from these leads
+      const userIdsFromLeads = campaignLeadsWithInfluencer
+        .filter(lead => lead.userId)
+        .map(lead => lead.userId.toString());
+      
+      const emailsFromLeads = campaignLeadsWithInfluencer
+        .filter(lead => lead.formData && lead.formData.email)
+        .map(lead => lead.formData.email.toLowerCase());
+      
+      // Step 4: Find users by these emails (in case userId wasn't linked)
+      let usersFromEmails = [];
+      if (emailsFromLeads.length > 0) {
+        usersFromEmails = await User.find({
+          email: { $in: emailsFromLeads },
+          $or: [
+            { "voucherClaims.businessId": businessObjectId },
+            { "guestDetails.businessId": businessObjectId },
+          ]
+        }).select('_id').lean();
+      }
+      
+      // Step 5: Add these user IDs to our set
+      userIdsFromLeads.forEach(id => customerIdsToInclude.add(id));
+      usersFromEmails.forEach(user => customerIdsToInclude.add(user._id.toString()));
+      
+      // Step 6: Find all campaigns associated with this influencer
+      const relatedCampaigns = await Campaign.find({
+        businessId: businessObjectId,
+        "influencers.name": new RegExp(influencer, "i")
+      }).select('_id influencers').lean();
+      
+      // Step 7: Extract all referral codes for this influencer from campaigns
+      const referralCodes = [];
+      relatedCampaigns.forEach(campaign => {
+        const matchingInfluencers = campaign.influencers.filter(inf => 
+          new RegExp(influencer, "i").test(inf.name)
+        );
+        
+        matchingInfluencers.forEach(inf => {
+          if (inf.referralCode) {
+            referralCodes.push(inf.referralCode);
+          }
+        });
+      });
+      
+      // Step 8: Find users directly in User collection with these patterns
+      const usersWithInfluencerSource = await User.find({
+        $and: [
+          { $or: [
+            { "voucherClaims.businessId": businessObjectId },
+            { "guestDetails.businessId": businessObjectId },
+          ]},
+          { $or: [
+            { "guestDetails.source.influencerName": new RegExp(influencer, "i") },
+            { "guestDetails.source.influencerPlatform": new RegExp(influencer, "i") },
+            { "guestDetails.source.referralCode": { $in: referralCodes } }
+          ]}
+        ]
+      }).select('_id').lean();
+      
+      usersWithInfluencerSource.forEach(user => 
+        customerIdsToInclude.add(user._id.toString())
+      );
+      
+      // Step 9: If we have referral codes, check for leads with those codes
+      if (referralCodes.length > 0) {
+        const campaignLeadsWithReferralCodes = await CampaignLead.find({
+          businessId: businessObjectId,
+          referralCode: { $in: referralCodes }
+        }).select('userId formData.email').lean();
+        
+        // Add user IDs from these leads
+        campaignLeadsWithReferralCodes
+          .filter(lead => lead.userId)
+          .forEach(lead => customerIdsToInclude.add(lead.userId.toString()));
+          
+        // Find users by emails from these leads
+        const emailsFromReferralLeads = campaignLeadsWithReferralCodes
+          .filter(lead => lead.formData && lead.formData.email)
+          .map(lead => lead.formData.email.toLowerCase());
+          
+        if (emailsFromReferralLeads.length > 0) {
+          const usersFromReferralEmails = await User.find({
+            email: { $in: emailsFromReferralLeads },
+            $or: [
+              { "voucherClaims.businessId": businessObjectId },
+              { "guestDetails.businessId": businessObjectId },
+            ]
+          }).select('_id').lean();
+          
+          usersFromReferralEmails.forEach(user => 
+            customerIdsToInclude.add(user._id.toString())
+          );
+        }
+      }
+      
+      // Step 10: Convert set to array for query
+      const customerIdsArray = Array.from(customerIdsToInclude);
+
+      // Step 11: IMPORTANT - Replace the base query entirely with just the IDs
+      if (customerIdsArray.length > 0) {
+        const objectIds = customerIdsArray
+          .map(id => {
+            try {
+              return new mongoose.Types.ObjectId(id);
+            } catch (e) {
+              return null;
+            }
+          })
+          .filter(id => id !== null);
+        
+        if (objectIds.length > 0) {
+          // Replace the entire baseQuery to strictly filter by these IDs
+          baseQuery._id = { $in: objectIds };
+          // Remove the $or conditions as we're now filtering directly by ID
+          delete baseQuery.$or;
+        } else {
+          // If no valid IDs, return no results instead of all customers
+          baseQuery._id = { $in: [new mongoose.Types.ObjectId('000000000000000000000000')] };
+          delete baseQuery.$or;
+        }
+      } else {
+        // If no IDs found, return no results instead of all customers
+        baseQuery._id = { $in: [new mongoose.Types.ObjectId('000000000000000000000000')] };
+        delete baseQuery.$or;
+      }
+    }
+    
+    // ============
+    // Add other filters
+    // ============
+    
     // Add Google Ads filter if provided 🎯
     if (req.query.google_ads === 'true') {
       baseQuery.$and = baseQuery.$and || [];
@@ -1602,6 +1745,49 @@ const getInfluencersList = async (req, res) => {
       }
     ]);
 
+    // Get all influencers with their referral codes from campaigns
+    const campaignReferralCodes = await Campaign.aggregate([
+      {
+        $match: {
+          businessId: businessObjectId,
+          'influencers.name': { $exists: true, $ne: null }
+        }
+      },
+      {
+        $unwind: '$influencers'
+      },
+      {
+        $group: {
+          _id: {
+            name: '$influencers.name',
+            platform: '$influencers.platform'
+          },
+          referralCodes: { $addToSet: '$influencers.referralCode' }
+        }
+      }
+    ]);
+
+    // Get leads count by referral code
+    const referralLeadCounts = await CampaignLead.aggregate([
+      {
+        $match: {
+          businessId: businessObjectId
+        }
+      },
+      {
+        $group: {
+          _id: '$referralCode',
+          count: { $sum: 1 }
+        }
+      }
+    ]);
+
+    // Create map of referral code to leads count
+    const referralCodeLeadsMap = new Map();
+    referralLeadCounts.forEach(item => {
+      referralCodeLeadsMap.set(item._id, item.count);
+    });
+
     // Merge influencers data from both sources 🔄
     const mergedInfluencers = new Map();
 
@@ -1622,12 +1808,33 @@ const getInfluencersList = async (req, res) => {
       });
     });
 
+    // Update lead counts from referral codes
+    campaignReferralCodes.forEach(inf => {
+      const key = `${inf._id.name}-${inf._id.platform}`;
+      if (mergedInfluencers.has(key)) {
+        const existing = mergedInfluencers.get(key);
+        // Count leads from all referral codes belonging to this influencer
+        let totalLeadsFromReferrals = 0;
+        inf.referralCodes.forEach(code => {
+          totalLeadsFromReferrals += referralCodeLeadsMap.get(code) || 0;
+        });
+        
+        // Update leads count if not already set by lead influencers
+        if (totalLeadsFromReferrals > 0) {
+          existing.metrics.leadsCount = totalLeadsFromReferrals;
+        }
+      }
+    });
+
     // Process lead influencers
     leadInfluencers.forEach(inf => {
       const key = `${inf._id.name}-${inf._id.platform}`;
       if (mergedInfluencers.has(key)) {
         const existing = mergedInfluencers.get(key);
-        existing.metrics.leadsCount = inf.leadsCount;
+        // Only update if the lead count from the leads collection is higher
+        if (inf.leadsCount > existing.metrics.leadsCount) {
+          existing.metrics.leadsCount = inf.leadsCount;
+        }
         existing.metrics.lastActive = new Date(Math.max(
           existing.metrics.lastActive,
           inf.lastActive

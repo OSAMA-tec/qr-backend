@@ -25,6 +25,7 @@ const appleWalletRoutes = require('./routes/appleWallet.routes');
 const whatsappRoutes = require('./routes/whatsapp.routes');
 const smsRoutes = require('./routes/sms.routes');
 const { cookieParser, handleCSRFError } = require('./middleware/csrf.middleware');
+const passTemplateRoutes = require('./routes/passTemplate.routes');
 
 // Initialize express app 🚀
 const app = express();
@@ -130,6 +131,7 @@ app.use('/api/marketplace', marketplaceRoutes);
 app.use('/api/wallet/apple', appleWalletRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api/sms', smsRoutes);
+app.use('/api/pass-templates', passTemplateRoutes);
 
 // Serve static files from public directory 📁
 app.use(express.static('public'));
