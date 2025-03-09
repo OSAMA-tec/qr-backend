@@ -3,6 +3,43 @@ const router = express.Router();
 const { sendSMS, sendBulkSMS, getSMSAnalytics, updateSMSStatus, sendOTP, verifyOTP, registerBusinessPhoneNumber, startPhoneNumberVerification, verifyBusinessPhoneNumber, listBusinessPhoneNumbers, setDefaultPhoneNumber, deleteBusinessPhoneNumber } = require('../controllers/sms.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 const client = require('../config/twilio');
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
+const csv = require('csv-parser');
+const xlsx = require('xlsx');
+
+// Configure multer for file uploads 📁
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        const uploadDir = 'uploads/phone-lists';
+        if (!fs.existsSync(uploadDir)) {
+            fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        cb(null, uploadDir);
+    },
+    filename: function (req, file, cb) {
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+    }
+});
+
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // Limit to 5MB
+    fileFilter: function (req, file, cb) {
+        // Accept only CSV and Excel files
+        const filetypes = /csv|xlsx|xls/;
+        const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+        const mimetype = filetypes.test(file.mimetype);
+        
+        if (extname && mimetype) {
+            return cb(null, true);
+        } else {
+            cb(new Error('Only CSV and Excel files are allowed'));
+        }
+    }
+});
 
 // ============== SMS Routes ==============
 
@@ -304,6 +341,165 @@ router.delete('/business-numbers/:phoneNumberId', authMiddleware, async (req, re
     try {
         const result = await deleteBusinessPhoneNumber(req);
         res.status(200).json(result);
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// ============== File Import Routes for Phone Numbers ==============
+
+// Import phone numbers from CSV/Excel for bulk SMS
+router.post('/import-phone-numbers', authMiddleware, upload.single('phonefile'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({
+                success: false,
+                error: 'No file uploaded! Please select a CSV or Excel file'
+            });
+        }
+
+        const filePath = req.file.path;
+        const fileExt = path.extname(req.file.originalname).toLowerCase();
+        let phoneNumbers = [];
+
+        // Process CSV file
+        if (fileExt === '.csv') {
+            const results = [];
+            
+            // Create a Promise that resolves when CSV parsing is complete
+            await new Promise((resolve, reject) => {
+                fs.createReadStream(filePath)
+                    .pipe(csv())
+                    .on('data', (data) => {
+                        // Look for common column names for phone numbers
+                        const phoneNumber = data.phone || data.phoneNumber || data.phone_number || 
+                                          data.mobile || data.mobileNumber || data.mobile_number ||
+                                          data.contact || data.contactNumber || data.contact_number ||
+                                          data.cell || data.cellNumber || data.cell_number;
+                        
+                        if (phoneNumber) {
+                            results.push({
+                                phoneNumber: phoneNumber.trim(),
+                                name: data.name || data.fullName || data.full_name || data.customerName || data.customer_name || '',
+                                email: data.email || data.emailAddress || data.email_address || ''
+                            });
+                        }
+                    })
+                    .on('end', () => {
+                        resolve(results);
+                    })
+                    .on('error', (err) => {
+                        reject(err);
+                    });
+            });
+            
+            phoneNumbers = results;
+        } 
+        // Process Excel file
+        else if (fileExt === '.xlsx' || fileExt === '.xls') {
+            const workbook = xlsx.readFile(filePath);
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            const data = xlsx.utils.sheet_to_json(worksheet);
+            
+            phoneNumbers = data.map(row => {
+                // Look for common column names for phone numbers
+                const phoneNumber = row.phone || row.phoneNumber || row.phone_number || 
+                                  row.mobile || row.mobileNumber || row.mobile_number ||
+                                  row.contact || row.contactNumber || row.contact_number ||
+                                  row.cell || row.cellNumber || row.cell_number;
+                
+                if (phoneNumber) {
+                    return {
+                        phoneNumber: String(phoneNumber).trim(),
+                        name: row.name || row.fullName || row.full_name || row.customerName || row.customer_name || '',
+                        email: row.email || row.emailAddress || row.email_address || ''
+                    };
+                }
+                return null;
+            }).filter(item => item !== null);
+        }
+
+        // Clean up - delete the file after processing
+        fs.unlinkSync(filePath);
+
+        // Validate phone numbers
+        const validPhoneNumbers = [];
+        const invalidPhoneNumbers = [];
+        
+        phoneNumbers.forEach(entry => {
+            if (validatePhoneNumber(entry.phoneNumber)) {
+                validPhoneNumbers.push(entry);
+            } else {
+                invalidPhoneNumbers.push(entry);
+            }
+        });
+
+        res.status(200).json({
+            success: true,
+            message: 'File processed successfully',
+            data: {
+                validCount: validPhoneNumbers.length,
+                invalidCount: invalidPhoneNumbers.length,
+                validPhoneNumbers: validPhoneNumbers,
+                invalidPhoneNumbers: invalidPhoneNumbers
+            }
+        });
+    } catch (error) {
+        console.error('Error processing file:', error);
+        
+        // Clean up file if it exists
+        if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to process file'
+        });
+    }
+});
+
+// Send SMS to imported phone numbers
+router.post('/send-to-imported', authMiddleware, async (req, res) => {
+    const { phoneNumbers, message, fromNumber, options } = req.body;
+    try {
+        if (!phoneNumbers || !Array.isArray(phoneNumbers) || phoneNumbers.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'Valid phone numbers array is required'
+            });
+        }
+
+        if (!message) {
+            return res.status(400).json({
+                success: false,
+                error: 'Message is required'
+            });
+        }
+
+        // Extract just the phone numbers for sending
+        const recipients = phoneNumbers.map(entry => entry.phoneNumber);
+        
+        // Include fromNumber in options if provided
+        const smsOptions = {
+            ...options,
+            fromNumber: fromNumber,
+            metadata: {
+                ...options?.metadata,
+                importSource: 'file-upload'
+            }
+        };
+        
+        const result = await sendBulkSMS(req, recipients, message, smsOptions);
+        res.status(200).json({
+            success: true,
+            message: 'Bulk SMS processing completed',
+            ...result
+        });
     } catch (error) {
         res.status(500).json({
             success: false,
