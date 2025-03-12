@@ -24,12 +24,12 @@ async function sendSMS(req, to, message, options = {}) {
             throw new Error('Invalid phone number format');
         }
 
-        // Check if a specific verified phone number was requested
+        // Determine from number - either use provided number or find from business's verified numbers
         let fromNumber = options.fromNumber;
         let useBusinessNumber = false;
         let businessPhoneNumber = null;
 
-        // If fromNumber is specified, verify it belongs to the business
+        // If fromNumber is explicitly specified, verify it belongs to the business
         if (fromNumber) {
             businessPhoneNumber = await BusinessPhoneNumber.findOne({
                 businessId: business._id,
@@ -43,14 +43,24 @@ async function sendSMS(req, to, message, options = {}) {
             }
             useBusinessNumber = true;
         } 
-        // If no specific number, check if business has a default verified number
+        // Otherwise, try to find the business's default verified number
         else {
+            // First try to find the default verified number
             businessPhoneNumber = await BusinessPhoneNumber.findOne({
                 businessId: business._id,
                 isVerified: true,
                 isDefault: true,
                 status: 'active'
             });
+            
+            // If no default, try any verified number
+            if (!businessPhoneNumber) {
+                businessPhoneNumber = await BusinessPhoneNumber.findOne({
+                    businessId: business._id,
+                    isVerified: true,
+                    status: 'active'
+                });
+            }
             
             if (businessPhoneNumber) {
                 fromNumber = businessPhoneNumber.phoneNumber;
@@ -77,7 +87,7 @@ async function sendSMS(req, to, message, options = {}) {
             
             // Throw error if messaging service SID is not configured
             if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
-                throw new Error('Twilio Messaging Service SID not configured and no verified business numbers available');
+                throw new Error('No verified business phone numbers found and no Twilio Messaging Service SID configured');
             }
         }
 
@@ -92,30 +102,31 @@ async function sendSMS(req, to, message, options = {}) {
             from: response.from || (useBusinessNumber ? fromNumber : process.env.TWILIO_MESSAGING_SERVICE_SID), // Ensure from is set
             to: messageData.to,
             body: message,
-            type: options.type === 'otp' ? 'verification' : 'marketing', // Map 'otp' to 'verification'
-            campaignId: options.campaignId,
-            campaignName: options.campaignName,
-            scheduledAt: options.scheduledAt,
-            metadata: {
-                ...(options.metadata || {}),
-                sentViaBusinessNumber: useBusinessNumber ? 'true' : 'false',
-                businessPhoneNumberId: useBusinessNumber ? businessPhoneNumber._id.toString() : undefined
-            }
+            type: options.type || 'marketing', // Default to marketing if not specified
+            campaignId: options.campaignId, // Optional field
+            campaignName: options.campaignName, // Optional field
+            scheduledAt: options.scheduledAt, // Optional field
+            metadata: options.metadata || {} // Default to empty object if not provided
         });
 
         await sms.save();
 
         // Update business analytics
-        await updateBusinessAnalytics(business._id, 'sms');
+        try {
+            await updateBusinessAnalytics(business._id, 'sms_sent');
+        } catch (analyticsError) {
+            // Log but don't fail if analytics update fails
+            console.error(`Analytics update error: ${analyticsError.message}`);
+        }
 
         return {
             success: true,
+            message: 'SMS sent successfully',
             messageSid: response.sid,
             status: response.status,
-            details: sms,
-            sentViaBusinessNumber: useBusinessNumber
+            from: useBusinessNumber ? fromNumber : 'Messaging Service',
+            to: to
         };
-
     } catch (error) {
         console.error(`Error sending SMS: ${error.message}`);
         throw error;
@@ -264,25 +275,6 @@ async function updateSMSStatus(messageSid, newStatus, deliveryDetails = {}) {
     }
 }
 
-// Helper function to update business analytics
-async function updateBusinessAnalytics(businessId, type) {
-    try {
-        const analytics = await BusinessAnalytics.findOne({ businessId });
-        if (!analytics) {
-            throw new Error('Business analytics not found');
-        }
-
-        if (type === 'sms') {
-            analytics.totalMessagesSent += 1;
-            await analytics.updateDailyMessageStats(new Date());
-        }
-
-        await analytics.save();
-    } catch (error) {
-        console.error(`Error updating business analytics: ${error.message}`);
-    }
-}
-
 // ============== OTP Functions ==============
 // Generate and send OTP
 async function sendOTP(req, to) {
@@ -332,33 +324,25 @@ async function sendOTP(req, to) {
             // Send the message
             const twilioResponse = await client.messages.create(messageOptions);
 
-            console.log('Twilio Response:', {
-                sid: twilioResponse.sid,
-                status: twilioResponse.status,
-                to: twilioResponse.to,
-                from: twilioResponse.from || messageOptions.messagingServiceSid
-            });
-
-            // Create SMS record for tracking
-            const sms = new SMS({
-                businessId: req.user.userId,
-                messageSid: twilioResponse.sid,
-                status: 'queued',
-                from: twilioResponse.from || messageOptions.messagingServiceSid,
-                to: to,
-                body: message,
-                type: 'verification',
-                metadata: {
-                    isOTP: 'true',
-                    expiresIn: '5 minutes',
-                    countryCode: to.substring(0, 3) // Store country code for analytics
-                }
-            });
-
-            await sms.save();
-
-            // Log success but don't expose OTP
-            console.log(`OTP SMS sent successfully to ${to} with SID: ${twilioResponse.sid}`);
+            // Create SMS record for tracking if this was sent within authenticated context
+            if (req.user && req.user.userId) {
+                const sms = new SMS({
+                    businessId: req.user.userId,
+                    messageSid: twilioResponse.sid,
+                    status: 'queued',
+                    from: twilioResponse.from || messageOptions.messagingServiceSid,
+                    to: to,
+                    body: message,
+                    type: 'verification',
+                    metadata: {
+                        isOTP: 'true',
+                        expiresIn: '5 minutes',
+                        countryCode: to.substring(0, 3) // Store country code for analytics
+                    }
+                });
+    
+                await sms.save();
+            }
 
             return {
                 success: true,
@@ -459,11 +443,37 @@ async function registerBusinessPhoneNumber(req) {
                     await existingNumber.setAsDefault();
                 }
                 
-                return {
-                    success: true,
-                    message: 'Phone number registration renewed',
-                    phoneNumber: existingNumber
-                };
+                // Send verification code
+                try {
+                    // Generate verification code
+                    const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+                    
+                    // Store verification code
+                    existingNumber.verificationDetails.verificationCode = verificationCode;
+                    existingNumber.verificationDetails.expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+                    await existingNumber.save();
+                    
+                    // Send via SMS
+                    const messageContent = `Your phone number verification code is: ${verificationCode}. Valid for 10 minutes.`;
+                    
+                    const smsResponse = await client.messages.create({
+                        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+                        to: phoneNumber,
+                        body: messageContent
+                    });
+                    
+                    return {
+                        success: true,
+                        message: 'Phone number registration renewed and verification code sent',
+                        phoneNumber: existingNumber,
+                        phoneNumberId: existingNumber._id,
+                        expiresIn: '10 minutes',
+                        nextStep: 'verify'
+                    };
+                } catch (smsError) {
+                    console.error('Failed to send verification SMS:', smsError);
+                    throw new Error(`Failed to send verification code: ${smsError.message}`);
+                }
             }
         }
 
@@ -475,7 +485,7 @@ async function registerBusinessPhoneNumber(req) {
             verificationStatus: 'pending',
             verificationDetails: {
                 requestedAt: new Date(),
-                expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // Expires in 24 hours
+                expiresAt: new Date(Date.now() + 10 * 60 * 1000), // 10 minutes for verification
                 attempts: 0
             },
             isDefault: makeDefault || false,
@@ -493,177 +503,49 @@ async function registerBusinessPhoneNumber(req) {
 
         await businessPhoneNumber.save();
 
-        return {
-            success: true,
-            message: 'Phone number registered successfully',
-            phoneNumber: businessPhoneNumber
-        };
-
+        // Send verification code
+        try {
+            // Generate verification code
+            const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
+            
+            // Store verification code
+            businessPhoneNumber.verificationDetails.verificationCode = verificationCode;
+            await businessPhoneNumber.save();
+            
+            // Send via SMS
+            const messageContent = `Your phone number verification code is: ${verificationCode}. Valid for 10 minutes.`;
+            
+            if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
+                throw new Error('Twilio Messaging Service SID not configured. Please contact support.');
+            }
+            
+            const smsResponse = await client.messages.create({
+                messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
+                to: phoneNumber,
+                body: messageContent
+            });
+            
+            return {
+                success: true,
+                message: 'Phone number registered and verification code sent',
+                phoneNumber: businessPhoneNumber,
+                phoneNumberId: businessPhoneNumber._id,
+                expiresIn: '10 minutes',
+                nextStep: 'verify'
+            };
+        } catch (smsError) {
+            // If SMS fails, delete the phone number record
+            await businessPhoneNumber.remove();
+            console.error('Failed to send verification SMS:', smsError);
+            throw new Error(`Failed to send verification code: ${smsError.message}`);
+        }
     } catch (error) {
         console.error(`Error registering business phone number: ${error.message}`);
         throw error;
     }
 }
 
-// Start phone number verification
-async function startPhoneNumberVerification(req) {
-    try {
-        const { phoneNumberId } = req.params;
-        const business = await User.findById(req.user.userId);
-        
-        if (!business || business.role !== 'business') {
-            throw new Error('Business not found or invalid role');
-        }
-
-        // Find the phone number
-        const phoneNumber = await BusinessPhoneNumber.findOne({
-            _id: phoneNumberId,
-            businessId: business._id
-        });
-
-        if (!phoneNumber) {
-            throw new Error('Phone number not found or does not belong to your business');
-        }
-
-        if (phoneNumber.verificationStatus === 'verified') {
-            return {
-                success: true,
-                message: 'Phone number is already verified',
-                phoneNumber
-            };
-        }
-
-        // Check if too many verification attempts
-        if (phoneNumber.verificationDetails.attempts >= 5) {
-            phoneNumber.verificationStatus = 'failed';
-            await phoneNumber.save();
-            throw new Error('Too many verification attempts. Please register the number again.');
-        }
-
-        try {
-            // Create a verification service
-            const verificationService = client.verify.v2.services(process.env.TWILIO_VERIFY_SERVICE_SID);
-            
-            // Set up verification options
-            const verificationOptions = {
-                to: phoneNumber.phoneNumber,
-                channel: 'sms'
-            };
-            
-            // Add template if available
-            if (process.env.TWILIO_VERIFY_TEMPLATE_SID) {
-                verificationOptions.templateSid = process.env.TWILIO_VERIFY_TEMPLATE_SID;
-            }
-            
-            // Start verification
-            const verification = await verificationService.verifications.create(verificationOptions);
-            console.log(verification)
-            // Update phone number verification details
-            phoneNumber.verificationStatus = 'pending';
-            phoneNumber.verificationDetails.verificationSid = verification.sid;
-            phoneNumber.verificationDetails.requestedAt = new Date();
-            phoneNumber.verificationDetails.expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-            phoneNumber.verificationDetails.attempts += 1;
-            phoneNumber.verificationDetails.lastAttemptAt = new Date();
-            
-            await phoneNumber.save();
-
-            return {
-                success: true,
-                message: 'Verification code sent successfully',
-                expiresIn: '10 minutes',
-                phoneNumber: phoneNumber.phoneNumber
-            };
-        } catch (twilioError) {
-            // Handle specific Twilio error codes
-            if (twilioError.code === 30038) {
-                // OTP Message Body Filtered error
-                console.error('Twilio OTP message filtered:', twilioError);
-                
-                // Update verification details to track the error
-                phoneNumber.verificationDetails.attempts += 1;
-                phoneNumber.verificationDetails.lastAttemptAt = new Date();
-                await phoneNumber.save();
-                
-                // Try fallback method for verification - using direct SMS instead of Verify API
-                if (!process.env.TWILIO_MESSAGING_SERVICE_SID) {
-                    throw new Error('Message filtered by carrier. Please contact support to verify your number.');
-                }
-                
-                // Generate manual verification code
-                const verificationCode = Math.floor(100000 + Math.random() * 900000).toString();
-                
-                // Store verification code
-                phoneNumber.verificationDetails.verificationCode = verificationCode;
-                phoneNumber.verificationDetails.expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
-                await phoneNumber.save();
-                
-                // Send via regular SMS
-                const messageContent = `Your phone number verification code is: ${verificationCode}. Valid for 10 minutes.`;
-                
-                // Multi-level logging to ensure output appears somewhere
-                process.stdout.write('\n\n***** EMERGENCY DEBUG *****\n');
-                process.stdout.write(`VERIFICATION CODE: ${verificationCode}\n`);
-                process.stdout.write(`PHONE NUMBER: ${phoneNumber.phoneNumber}\n`);
-                process.stdout.write('*************************\n\n');
-                
-                console.log('==================================================');
-                console.log('FALLBACK VERIFICATION TRIGGERED - ERROR 30038');
-                console.log(`VERIFICATION CODE: ${verificationCode}`);
-                console.log(`PHONE NUMBER: ${phoneNumber.phoneNumber}`);
-                console.log('==================================================');
-                
-                // Also log to error for good measure (some environments only capture stderr)
-                console.error('IMPORTANT: Fallback verification code generated:', verificationCode);
-                
-                try {
-                    // Add additional logging here - right before sending SMS
-                    console.log(`ABOUT TO SEND VERIFICATION CODE: ${verificationCode}`);
-                    // Log to a file as well for debugging
-                    require('fs').appendFileSync('verification_codes.log', 
-                        `${new Date().toISOString()} - Phone: ${phoneNumber.phoneNumber}, Code: ${verificationCode}\n`);
-                    
-                    const smsResponse = await client.messages.create({
-                        messagingServiceSid: process.env.TWILIO_MESSAGING_SERVICE_SID,
-                        to: phoneNumber.phoneNumber,
-                        body: messageContent
-                    });
-                    
-                    console.log('Fallback SMS sent successfully:', smsResponse.sid);
-                    console.log(`Code ${verificationCode} sent to ${phoneNumber.phoneNumber}`);
-                    
-                    // Force verification code to be visible in any logs
-                    setTimeout(() => {
-                        console.log(`DELAYED LOG - VERIFICATION CODE: ${verificationCode}`);
-                    }, 100);
-                    
-                    // Return success with verification code included
-                    return {
-                        success: true,
-                        message: 'Verification code sent using alternative method',
-                        expiresIn: '10 minutes',
-                        phoneNumber: phoneNumber.phoneNumber,
-                        usingFallback: true,
-                        verification_code: verificationCode // Always include the code for easier testing
-                    };
-                } catch (smsError) {
-                    console.error('Failed to send fallback verification SMS:', smsError);
-                    // Log the verification code again in case of error
-                    console.error('VERIFICATION CODE (from error handler):', verificationCode);
-                    throw new Error(`Failed to send verification code: ${smsError.message}`);
-                }
-            } else {
-                // For other Twilio errors, rethrow
-                throw twilioError;
-            }
-        }
-    } catch (error) {
-        console.error(`Error starting phone number verification: ${error.message}`);
-        throw error;
-    }
-}
-
-// Verify phone number with code
+// Verify business phone number with code
 async function verifyBusinessPhoneNumber(req) {
     try {
         const { phoneNumberId, verificationCode } = req.body;
@@ -691,82 +573,35 @@ async function verifyBusinessPhoneNumber(req) {
             throw new Error('Verification code has expired. Please request a new one.');
         }
 
-        // Check if we're using the fallback verification (direct SMS)
-        if (phoneNumber.verificationDetails.verificationCode) {
-            // Direct comparison with stored code
-            if (phoneNumber.verificationDetails.verificationCode === verificationCode) {
-                // Update phone number as verified
-                phoneNumber.isVerified = true;
-                phoneNumber.verificationStatus = 'verified';
-                phoneNumber.verificationDetails.completedAt = new Date();
-                // Clear the verification code for security
-                phoneNumber.verificationDetails.verificationCode = undefined;
-                await phoneNumber.save();
+        // Direct comparison with stored code
+        if (phoneNumber.verificationDetails.verificationCode === verificationCode) {
+            // Update phone number as verified
+            phoneNumber.isVerified = true;
+            phoneNumber.verificationStatus = 'verified';
+            phoneNumber.verificationDetails.completedAt = new Date();
+            // Clear the verification code for security
+            phoneNumber.verificationDetails.verificationCode = undefined;
+            await phoneNumber.save();
 
-                return {
-                    success: true,
-                    message: 'Phone number verified successfully',
-                    phoneNumber: phoneNumber
-                };
-            } else {
-                // Increment attempts
-                phoneNumber.verificationDetails.attempts += 1;
-                phoneNumber.verificationDetails.lastAttemptAt = new Date();
-                
-                // Mark as failed if too many attempts
-                if (phoneNumber.verificationDetails.attempts >= 5) {
-                    phoneNumber.verificationStatus = 'failed';
-                }
-                
-                await phoneNumber.save();
-                
-                throw new Error('Invalid verification code');
-            }
+            return {
+                success: true,
+                message: 'Phone number verified successfully',
+                phoneNumber: phoneNumber,
+                nextStep: 'send_sms'
+            };
         } else {
-            // Use Twilio Verify API for verification
-            try {
-                const verificationService = client.verify.v2.services(process.env.TWILIO_VERIFY_SERVICE_SID);
-                const verification = await verificationService.verificationChecks.create({
-                    to: phoneNumber.phoneNumber,
-                    code: verificationCode
-                });
-
-                if (verification.status === 'approved') {
-                    // Update phone number as verified
-                    phoneNumber.isVerified = true;
-                    phoneNumber.verificationStatus = 'verified';
-                    phoneNumber.verificationDetails.completedAt = new Date();
-                    await phoneNumber.save();
-
-                    return {
-                        success: true,
-                        message: 'Phone number verified successfully',
-                        phoneNumber: phoneNumber
-                    };
-                } else {
-                    // Increment attempts
-                    phoneNumber.verificationDetails.attempts += 1;
-                    phoneNumber.verificationDetails.lastAttemptAt = new Date();
-                    
-                    // Mark as failed if too many attempts
-                    if (phoneNumber.verificationDetails.attempts >= 5) {
-                        phoneNumber.verificationStatus = 'failed';
-                    }
-                    
-                    await phoneNumber.save();
-                    
-                    throw new Error('Invalid verification code');
-                }
-            } catch (twilioError) {
-                console.error('Twilio verification error:', twilioError);
-                
-                // Update attempts
-                phoneNumber.verificationDetails.attempts += 1;
-                phoneNumber.verificationDetails.lastAttemptAt = new Date();
-                await phoneNumber.save();
-                
-                throw new Error(`Verification failed: ${twilioError.message}`);
+            // Increment attempts
+            phoneNumber.verificationDetails.attempts += 1;
+            phoneNumber.verificationDetails.lastAttemptAt = new Date();
+            
+            // Mark as failed if too many attempts
+            if (phoneNumber.verificationDetails.attempts >= 5) {
+                phoneNumber.verificationStatus = 'failed';
             }
+            
+            await phoneNumber.save();
+            
+            throw new Error('Invalid verification code');
         }
     } catch (error) {
         console.error(`Error verifying business phone number: ${error.message}`);
@@ -872,7 +707,7 @@ async function deleteBusinessPhoneNumber(req) {
         }
 
         // Delete the phone number
-        await phoneNumber.remove();
+        await phoneNumber.deleteOne();
 
         return {
             success: true,
@@ -885,6 +720,32 @@ async function deleteBusinessPhoneNumber(req) {
     }
 }
 
+// Helper function to update business analytics
+async function updateBusinessAnalytics(businessId, type) {
+    try {
+        const analytics = await BusinessAnalytics.findOne({ businessId });
+        if (!analytics) {
+            // Just log and return if analytics not found, don't throw
+            console.log(`Business analytics not found for ID: ${businessId}`);
+            return;
+        }
+
+        if (type === 'sms' || type === 'sms_sent') {
+            analytics.totalMessagesSent = (analytics.totalMessagesSent || 0) + 1;
+            
+            // Check if updateDailyMessageStats method exists
+            if (typeof analytics.updateDailyMessageStats === 'function') {
+                await analytics.updateDailyMessageStats(new Date());
+            }
+        }
+
+        await analytics.save();
+    } catch (error) {
+        console.error(`Error updating business analytics: ${error.message}`);
+        // Don't throw, just log the error
+    }
+}
+
 module.exports = {
     sendSMS,
     sendBulkSMS,
@@ -894,7 +755,6 @@ module.exports = {
     verifyOTP,
     // Business phone number management
     registerBusinessPhoneNumber,
-    startPhoneNumberVerification,
     verifyBusinessPhoneNumber,
     listBusinessPhoneNumbers,
     setDefaultPhoneNumber,

@@ -43,47 +43,66 @@ const upload = multer({
 
 // ============== SMS Routes ==============
 
-// Send single SMS
+// Send SMS (handles both single and bulk)
 router.post('/send', authMiddleware, async (req, res) => {
-    const { to, message, fromNumber, options } = req.body;
     try {
-        // Include fromNumber in options if provided
+        const { to, recipients, message, fromNumber } = req.body;
+        
+        // Validate message content
+        if (!message) {
+            return res.status(400).json({
+                success: false,
+                error: 'Message content is required'
+            });
+        }
+        
+        // Options are optional - just pass fromNumber if provided
         const smsOptions = {
-            ...options,
-            fromNumber: fromNumber
+            fromNumber: fromNumber // Will be automatically determined if not provided
         };
         
+        // Handle bulk SMS if recipients array is provided
+        if (recipients && Array.isArray(recipients) && recipients.length > 0) {
+            const result = await sendBulkSMS(req, recipients, message, smsOptions);
+            return res.status(200).json({
+                success: true,
+                message: 'Bulk SMS processing completed',
+                ...result
+            });
+        }
+        
+        // Handle single SMS
+        if (!to) {
+            return res.status(400).json({
+                success: false,
+                error: 'Recipient phone number is required'
+            });
+        }
+        
         const result = await sendSMS(req, to, message, smsOptions);
-        res.status(200).json({
+        return res.status(200).json({
             success: true,
             message: 'SMS sent successfully',
             ...result
         });
     } catch (error) {
-        res.status(500).json({
-            success: false,
-            error: error.message
-        });
-    }
-});
-
-// Send bulk SMS
-router.post('/send-bulk', authMiddleware, async (req, res) => {
-    const { recipients, message, fromNumber, options } = req.body;
-    try {
-        // Include fromNumber in options if provided
-        const smsOptions = {
-            ...options,
-            fromNumber: fromNumber
-        };
+        // Check for specific error types
+        if (error.message.includes('not verified') || error.message.includes('does not belong to your business')) {
+            return res.status(400).json({
+                success: false,
+                error: error.message,
+                nextStep: 'verify_number'
+            });
+        }
         
-        const result = await sendBulkSMS(req, recipients, message, smsOptions);
-        res.status(200).json({
-            success: true,
-            message: 'Bulk SMS processing completed',
-            ...result
-        });
-    } catch (error) {
+        if (error.message.includes('No verified business phone numbers')) {
+            return res.status(400).json({
+                success: false,
+                error: error.message,
+                nextStep: 'register_and_verify_number'
+            });
+        }
+        
         res.status(500).json({
             success: false,
             error: error.message
@@ -292,7 +311,8 @@ router.post('/business-numbers/:phoneNumberId/verify', authMiddleware, async (re
     } catch (error) {
         res.status(500).json({
             success: false,
-            error: error.message
+            error: error.message,
+            nextStep: 'register' // Guide client to re-register if verification fails
         });
     }
 });
@@ -303,6 +323,24 @@ router.post('/business-numbers/verify-code', authMiddleware, async (req, res) =>
         const result = await verifyBusinessPhoneNumber(req);
         res.status(200).json(result);
     } catch (error) {
+        // Check if it's an expired code error
+        if (error.message.includes('expired')) {
+            return res.status(400).json({
+                success: false,
+                error: error.message,
+                nextStep: 'request_new_code'
+            });
+        }
+        
+        // Check if it's an invalid code error
+        if (error.message.includes('Invalid verification code')) {
+            return res.status(400).json({
+                success: false,
+                error: error.message,
+                nextStep: 'retry_code'
+            });
+        }
+        
         res.status(500).json({
             success: false,
             error: error.message
@@ -327,7 +365,10 @@ router.get('/business-numbers', authMiddleware, async (req, res) => {
 router.post('/business-numbers/:phoneNumberId/set-default', authMiddleware, async (req, res) => {
     try {
         const result = await setDefaultPhoneNumber(req);
-        res.status(200).json(result);
+        res.status(200).json({
+            ...result,
+            nextStep: 'send_sms' // Guide client to send SMS after setting default
+        });
     } catch (error) {
         res.status(500).json({
             success: false,
@@ -351,78 +392,72 @@ router.delete('/business-numbers/:phoneNumberId', authMiddleware, async (req, re
 
 // ============== File Import Routes for Phone Numbers ==============
 
-// Import phone numbers from CSV/Excel for bulk SMS
-router.post('/import-phone-numbers', authMiddleware, upload.single('phonefile'), async (req, res) => {
+// Import and send SMS using CSV/Excel file
+router.post('/bulk-send', authMiddleware, upload.single('phonefile'), async (req, res) => {
     try {
-        if (!req.file) {
+        const { message, fromNumber } = req.body;
+        
+        // Check if message is provided
+        if (!message) {
             return res.status(400).json({
                 success: false,
-                error: 'No file uploaded! Please select a CSV or Excel file'
+                error: 'Message content is required'
             });
         }
+        
+        // Check if file is uploaded
+        if (!req.file) {
+            // If no file, check if phoneNumbers are provided in the request body
+            if (req.body.phoneNumbers) {
+                try {
+                    const phoneNumbers = JSON.parse(req.body.phoneNumbers);
+                    if (!Array.isArray(phoneNumbers) || phoneNumbers.length === 0) {
+                        return res.status(400).json({
+                            success: false,
+                            error: 'Valid phone numbers array is required'
+                        });
+                    }
+                    
+                    // Extract just the phone numbers for sending
+                    const recipients = phoneNumbers.map(entry => 
+                        typeof entry === 'string' ? entry : entry.phoneNumber
+                    );
+                    
+                    // Simple options object, just include fromNumber if provided
+                    const smsOptions = {
+                        fromNumber: fromNumber, // Will be automatically determined if not provided
+                        metadata: {
+                            importSource: 'direct-input'
+                        }
+                    };
+                    
+                    const result = await sendBulkSMS(req, recipients, message, smsOptions);
+                    return res.status(200).json({
+                        success: true,
+                        message: 'Bulk SMS processing completed',
+                        ...result
+                    });
+                } catch (parseError) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Invalid phoneNumbers format. Must be a JSON array.'
+                    });
+                }
+            } else {
+                return res.status(400).json({
+                    success: false,
+                    error: 'No file uploaded or phone numbers provided'
+                });
+            }
+        }
 
+        // Process the uploaded file
         const filePath = req.file.path;
         const fileExt = path.extname(req.file.originalname).toLowerCase();
-        let phoneNumbers = [];
-
-        // Process CSV file
-        if (fileExt === '.csv') {
-            const results = [];
-            
-            // Create a Promise that resolves when CSV parsing is complete
-            await new Promise((resolve, reject) => {
-                fs.createReadStream(filePath)
-                    .pipe(csv())
-                    .on('data', (data) => {
-                        // Look for common column names for phone numbers
-                        const phoneNumber = data.phone || data.phoneNumber || data.phone_number || 
-                                          data.mobile || data.mobileNumber || data.mobile_number ||
-                                          data.contact || data.contactNumber || data.contact_number ||
-                                          data.cell || data.cellNumber || data.cell_number;
-                        
-                        if (phoneNumber) {
-                            results.push({
-                                phoneNumber: phoneNumber.trim(),
-                                name: data.name || data.fullName || data.full_name || data.customerName || data.customer_name || '',
-                                email: data.email || data.emailAddress || data.email_address || ''
-                            });
-                        }
-                    })
-                    .on('end', () => {
-                        resolve(results);
-                    })
-                    .on('error', (err) => {
-                        reject(err);
-                    });
-            });
-            
-            phoneNumbers = results;
-        } 
-        // Process Excel file
-        else if (fileExt === '.xlsx' || fileExt === '.xls') {
-            const workbook = xlsx.readFile(filePath);
-            const sheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[sheetName];
-            const data = xlsx.utils.sheet_to_json(worksheet);
-            
-            phoneNumbers = data.map(row => {
-                // Look for common column names for phone numbers
-                const phoneNumber = row.phone || row.phoneNumber || row.phone_number || 
-                                  row.mobile || row.mobileNumber || row.mobile_number ||
-                                  row.contact || row.contactNumber || row.contact_number ||
-                                  row.cell || row.cellNumber || row.cell_number;
-                
-                if (phoneNumber) {
-                    return {
-                        phoneNumber: String(phoneNumber).trim(),
-                        name: row.name || row.fullName || row.full_name || row.customerName || row.customer_name || '',
-                        email: row.email || row.emailAddress || row.email_address || ''
-                    };
-                }
-                return null;
-            }).filter(item => item !== null);
-        }
-
+        
+        // Extract phone numbers from file
+        const phoneNumbers = await processPhoneNumberFile(filePath, fileExt);
+        
         // Clean up - delete the file after processing
         fs.unlinkSync(filePath);
 
@@ -437,70 +472,60 @@ router.post('/import-phone-numbers', authMiddleware, upload.single('phonefile'),
                 invalidPhoneNumbers.push(entry);
             }
         });
+        
+        if (validPhoneNumbers.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'No valid phone numbers found in file',
+                invalidPhoneNumbers: invalidPhoneNumbers
+            });
+        }
 
+        // Extract just the phone numbers for sending
+        const recipients = validPhoneNumbers.map(entry => entry.phoneNumber);
+        
+        // Simple options object with metadata
+        const smsOptions = {
+            fromNumber: fromNumber, // Will be automatically determined if not provided
+            metadata: {
+                importSource: 'file-upload',
+                fileName: req.file.originalname
+            }
+        };
+        
+        const result = await sendBulkSMS(req, recipients, message, smsOptions);
+        
         res.status(200).json({
             success: true,
-            message: 'File processed successfully',
-            data: {
-                validCount: validPhoneNumbers.length,
-                invalidCount: invalidPhoneNumbers.length,
-                validPhoneNumbers: validPhoneNumbers,
-                invalidPhoneNumbers: invalidPhoneNumbers
-            }
+            message: 'Bulk SMS processing completed',
+            validCount: validPhoneNumbers.length,
+            invalidCount: invalidPhoneNumbers.length,
+            ...result,
+            invalidPhoneNumbers: invalidPhoneNumbers.length > 0 ? invalidPhoneNumbers : undefined
         });
     } catch (error) {
-        console.error('Error processing file:', error);
-        
         // Clean up file if it exists
         if (req.file && req.file.path && fs.existsSync(req.file.path)) {
             fs.unlinkSync(req.file.path);
         }
         
-        res.status(500).json({
-            success: false,
-            error: error.message || 'Failed to process file'
-        });
-    }
-});
-
-// Send SMS to imported phone numbers
-router.post('/send-to-imported', authMiddleware, async (req, res) => {
-    const { phoneNumbers, message, fromNumber, options } = req.body;
-    try {
-        if (!phoneNumbers || !Array.isArray(phoneNumbers) || phoneNumbers.length === 0) {
+        // Handle specific errors
+        if (error.message.includes('not verified') || error.message.includes('does not belong')) {
             return res.status(400).json({
                 success: false,
-                error: 'Valid phone numbers array is required'
+                error: error.message,
+                nextStep: 'verify_number'
             });
         }
-
-        if (!message) {
+        
+        if (error.message.includes('No verified business phone numbers')) {
             return res.status(400).json({
                 success: false,
-                error: 'Message is required'
+                error: error.message,
+                nextStep: 'register_and_verify_number'
             });
         }
-
-        // Extract just the phone numbers for sending
-        const recipients = phoneNumbers.map(entry => entry.phoneNumber);
         
-        // Include fromNumber in options if provided
-        const smsOptions = {
-            ...options,
-            fromNumber: fromNumber,
-            metadata: {
-                ...options?.metadata,
-                importSource: 'file-upload'
-            }
-        };
-        
-        const result = await sendBulkSMS(req, recipients, message, smsOptions);
-        res.status(200).json({
-            success: true,
-            message: 'Bulk SMS processing completed',
-            ...result
-        });
-    } catch (error) {
         res.status(500).json({
             success: false,
             error: error.message
