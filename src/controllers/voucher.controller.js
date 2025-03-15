@@ -659,17 +659,21 @@ const redeemVoucher = async (req, res) => {
       discountAmount = Math.min(voucher.discountValue, amount);
     }
 
+    const finalAmount = amount - discountAmount;
+
     // Create transaction record with reference number 📝
     const transaction = new Transaction({
-      userId: customerId,
-      businessId,
-      voucherId,
-      amount,
-      discountAmount,
-      location,
-      status: 'completed',
-      redeemedAt: new Date(),
-      referenceNumber: generateReferenceNumber()
+      couponId: voucherId,  // Changed from voucherId to couponId
+      customerId,           // Correct - matches model
+      businessId,           // Correct - matches model
+      originalAmount: amount,  // Changed from amount to originalAmount
+      discountAmount,       // Correct - matches model
+      finalAmount,          // Added finalAmount field
+      location,             // Correct - matches model
+      status: 'completed',  // Correct - matches model
+      transactionDate: new Date(), // Changed from redeemedAt to transactionDate
+      referenceNumber: generateReferenceNumber(),
+      notes: `Voucher redemption for code: ${voucher.code}` // Added notes field
     });
 
     await transaction.save({ session });

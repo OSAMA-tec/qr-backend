@@ -449,7 +449,7 @@ const listCustomers = async (req, res) => {
               $match: {
                 $expr: {
                   $and: [
-                    { $eq: ["$userId", "$$userId"] },
+                    { $eq: ["$customerId", "$$userId"] },  // Changed from userId to customerId
                     { $eq: ["$businessId", businessObjectId] },
                   ],
                 },
@@ -484,7 +484,7 @@ const listCustomers = async (req, res) => {
           // Calculate customer metrics 📊
           metrics: {
             totalSpent: {
-              $sum: "$transactions.amount"
+              $sum: "$transactions.finalAmount"  // Changed from amount to finalAmount
             },
             totalDiscounts: {
               $sum: "$transactions.discountAmount"
@@ -643,10 +643,10 @@ const listCustomers = async (req, res) => {
             : 0,
         recentTransactions: (customer.recentTransactions || []).map((tx) => ({
           id: tx._id,
-          amount: tx.amount,
-          discountAmount: tx.discountAmount,
-          date: tx.createdAt,
-          voucherId: tx.voucherId,
+          amount: tx.finalAmount || tx.originalAmount || 0,  // Changed from amount to finalAmount
+          discountAmount: tx.discountAmount || 0,
+          date: tx.createdAt || tx.transactionDate,  // Added transactionDate as fallback
+          voucherId: tx.voucherId || tx.couponId,  // Added couponId as fallback
           location: tx.location || null,
           status: tx.status || "completed",
         })),
@@ -748,11 +748,11 @@ const getCustomerDetails = async (req, res) => {
 
     // Get customer's transaction history with this business
     const transactions = await Transaction.find({
-      userId: customerId,
+      customerId: customerId,  // Changed from userId to customerId
       businessId,
     })
-    .sort({ createdAt: -1 })
-      .select("amount createdAt voucherId location");
+    .sort({ transactionDate: -1 })  // Changed from createdAt to transactionDate
+      .select("originalAmount finalAmount discountAmount transactionDate couponId location");  // Updated field names
 
     // Calculate customer metrics
     const metrics = {
