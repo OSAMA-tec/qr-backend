@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { sendSMS, sendBulkSMS, getSMSAnalytics, updateSMSStatus, sendOTP, verifyOTP, registerBusinessPhoneNumber, startPhoneNumberVerification, verifyBusinessPhoneNumber, listBusinessPhoneNumbers, setDefaultPhoneNumber, deleteBusinessPhoneNumber } = require('../controllers/sms.controller');
+const { sendSMS, sendBulkSMS, getSMSAnalytics, updateSMSStatus, sendOTP, verifyOTP, registerBusinessPhoneNumber, startPhoneNumberVerification, verifyBusinessPhoneNumber, listBusinessPhoneNumbers, setDefaultPhoneNumber, deleteBusinessPhoneNumber, submitTollFreeVerification, checkTollFreeVerificationStatus } = require('../controllers/sms.controller');
 const authMiddleware = require('../middleware/auth.middleware');
 const client = require('../config/twilio');
 const multer = require('multer');
@@ -381,6 +381,54 @@ router.post('/business-numbers/:phoneNumberId/set-default', authMiddleware, asyn
 router.delete('/business-numbers/:phoneNumberId', authMiddleware, async (req, res) => {
     try {
         const result = await deleteBusinessPhoneNumber(req);
+        res.status(200).json(result);
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// ============== Toll-Free Verification Routes ==============
+
+// Submit toll-free verification
+router.post('/business-numbers/:phoneNumberId/toll-free-verification', authMiddleware, async (req, res) => {
+    try {
+        // Add phoneNumberId from params to request body
+        req.body.phoneNumberId = req.params.phoneNumberId;
+        
+        const result = await submitTollFreeVerification(req);
+        res.status(200).json(result);
+    } catch (error) {
+        // Handle specific error types
+        if (error.message.includes('not a toll-free number')) {
+            return res.status(400).json({
+                success: false,
+                error: error.message,
+                nextStep: 'register_toll_free'
+            });
+        }
+        
+        if (error.message.includes('must be verified before')) {
+            return res.status(400).json({
+                success: false,
+                error: error.message,
+                nextStep: 'verify_number_first'
+            });
+        }
+        
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// Check toll-free verification status
+router.get('/business-numbers/:phoneNumberId/toll-free-verification', authMiddleware, async (req, res) => {
+    try {
+        const result = await checkTollFreeVerificationStatus(req);
         res.status(200).json(result);
     } catch (error) {
         res.status(500).json({

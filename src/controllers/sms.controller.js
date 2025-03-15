@@ -746,6 +746,192 @@ async function updateBusinessAnalytics(businessId, type) {
     }
 }
 
+// Submit toll-free verification
+async function submitTollFreeVerification(req) {
+    try {
+        const { 
+            phoneNumberId, 
+            businessProfile, 
+            useCase 
+        } = req.body;
+        
+        const business = await User.findById(req.user.userId);
+        
+        if (!business || business.role !== 'business') {
+            throw new Error('Business not found or invalid role');
+        }
+
+        // Validate business profile fields
+        if (!businessProfile || !businessProfile.legalEntityName || !businessProfile.websiteUrl) {
+            throw new Error('Business name and website URL are required');
+        }
+
+        // Validate use case fields 
+        if (!useCase || !useCase.description || !useCase.category || !useCase.optInProcess) {
+            throw new Error('Use case description, category, and opt-in process are required');
+        }
+
+        // Find the toll-free number to verify
+        const phoneNumber = await BusinessPhoneNumber.findOne({
+            _id: phoneNumberId,
+            businessId: business._id
+        });
+
+        if (!phoneNumber) {
+            throw new Error('Phone number not found or does not belong to your business');
+        }
+
+        // Check if it's a toll-free number
+        if (!/^\+1(8[0-9]{2}|855|866|877|888)/.test(phoneNumber.phoneNumber)) {
+            throw new Error('The specified number is not a toll-free number');
+        }
+
+        // Check if number is verified first (basic verification)
+        if (!phoneNumber.isVerified) {
+            throw new Error('Phone number must be verified before submitting toll-free verification');
+        }
+
+        // Update phone number with verification details
+        phoneNumber.numberType = 'toll-free';
+        phoneNumber.tollFreeVerification = {
+            status: 'verification_in_progress',
+            submittedAt: new Date(),
+            updatedAt: new Date(),
+            useCase: {
+                description: useCase.description,
+                category: useCase.category,
+                optInProcess: useCase.optInProcess,
+                optInExample: useCase.optInExample || ''
+            },
+            businessProfile: {
+                legalEntityName: businessProfile.legalEntityName,
+                websiteUrl: businessProfile.websiteUrl,
+                businessType: businessProfile.businessType || 'Other'
+            }
+        };
+
+        // This is where you would integrate with Twilio's API to submit the verification
+        // For now, we'll just save the verification details
+        
+        // In production, you would integrate with the actual Twilio verification API:
+        // Example (pseudo-code):
+        /*
+        const twilioResponse = await client.tollFree.verifications.create({
+            PhoneNumberSid: phoneNumber.twilioSid,
+            BusinessName: businessProfile.legalEntityName,
+            BusinessWebsite: businessProfile.websiteUrl,
+            UseCase: useCase.category,
+            UseCaseDescription: useCase.description,
+            OptInProcessDescription: useCase.optInProcess,
+            OptInExample: useCase.optInExample
+        });
+        
+        phoneNumber.tollFreeVerification.submissionId = twilioResponse.sid;
+        */
+
+        await phoneNumber.save();
+
+        // In a real scenario, we would need to periodically check the status of the verification
+        // That would require a separate worker/cron job
+
+        return {
+            success: true,
+            message: 'Toll-free verification submitted successfully',
+            phoneNumber: phoneNumber,
+            status: 'verification_in_progress',
+            nextStep: 'wait_for_approval'
+        };
+
+    } catch (error) {
+        console.error(`Error submitting toll-free verification: ${error.message}`);
+        throw error;
+    }
+}
+
+// Check toll-free verification status
+async function checkTollFreeVerificationStatus(req) {
+    try {
+        const { phoneNumberId } = req.params;
+        const business = await User.findById(req.user.userId);
+        
+        if (!business || business.role !== 'business') {
+            throw new Error('Business not found or invalid role');
+        }
+
+        // Find the toll-free number
+        const phoneNumber = await BusinessPhoneNumber.findOne({
+            _id: phoneNumberId,
+            businessId: business._id
+        });
+
+        if (!phoneNumber) {
+            throw new Error('Phone number not found or does not belong to your business');
+        }
+
+        if (!phoneNumber.tollFreeVerification) {
+            return {
+                success: true,
+                status: 'not_submitted',
+                message: 'Toll-free verification has not been submitted yet',
+                phoneNumber: phoneNumber
+            };
+        }
+
+        // In production, you would check with Twilio API for the current status
+        /*
+        if (phoneNumber.tollFreeVerification.submissionId) {
+            const twilioResponse = await client.tollFree.verifications(phoneNumber.tollFreeVerification.submissionId).fetch();
+            
+            // Update status based on Twilio response
+            phoneNumber.tollFreeVerification.status = twilioResponse.status;
+            phoneNumber.tollFreeVerification.updatedAt = new Date();
+            
+            if (twilioResponse.status === 'rejected') {
+                phoneNumber.tollFreeVerification.rejectionReason = twilioResponse.rejectionReason;
+            }
+            
+            await phoneNumber.save();
+        }
+        */
+
+        return {
+            success: true,
+            status: phoneNumber.tollFreeVerification.status,
+            submittedAt: phoneNumber.tollFreeVerification.submittedAt,
+            updatedAt: phoneNumber.tollFreeVerification.updatedAt || phoneNumber.tollFreeVerification.submittedAt,
+            rejectionReason: phoneNumber.tollFreeVerification.rejectionReason,
+            message: getStatusMessage(phoneNumber.tollFreeVerification.status),
+            phoneNumber: {
+                _id: phoneNumber._id,
+                phoneNumber: phoneNumber.phoneNumber,
+                isDefault: phoneNumber.isDefault
+            }
+        };
+
+    } catch (error) {
+        console.error(`Error checking toll-free verification status: ${error.message}`);
+        throw error;
+    }
+}
+
+// Helper function to get status message
+function getStatusMessage(status) {
+    switch (status) {
+        case 'not_verified':
+            return 'This toll-free number has not been submitted for verification';
+        case 'verification_in_progress':
+            return 'Your toll-free verification is in progress. This can take 1-3 business days.';
+        case 'approved':
+            return 'Your toll-free number has been verified and approved for SMS messaging!';
+        case 'rejected':
+            return 'Your toll-free verification was rejected. Please see the rejection reason and resubmit with corrected information.';
+        case 'resubmission_required':
+            return 'Your toll-free verification requires resubmission with updated information.';
+        default:
+            return 'Unknown verification status';
+    }
+}
+
 module.exports = {
     sendSMS,
     sendBulkSMS,
@@ -758,5 +944,8 @@ module.exports = {
     verifyBusinessPhoneNumber,
     listBusinessPhoneNumbers,
     setDefaultPhoneNumber,
-    deleteBusinessPhoneNumber
+    deleteBusinessPhoneNumber,
+    // Toll-free verification
+    submitTollFreeVerification,
+    checkTollFreeVerificationStatus
 }; 

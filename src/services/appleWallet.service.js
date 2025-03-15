@@ -26,6 +26,7 @@ const COLORS = {
   foreground: 'rgb(255, 255, 255)', // Pure white text for maximum visibility
   label: 'rgb(255, 220, 105)',     // Gold/yellow for labels to stand out
   accent: 'rgb(65, 145, 230)',     // Bright blue accent color
+  discountText: 'rgb(255, 220, 0)', // Bright yellow for discount text
   strip: { r: 15, g: 15, b: 25, alpha: 0.85 } // Very dark strip overlay for text clarity
 };
 
@@ -86,6 +87,31 @@ const processImage = async (imageData, type, density = '1x', options = {}) => {
     if (type === 'strip') {
       // Enhanced strip image processing for better appearance
       try {
+        // Create a gradient buffer for overlay
+        const gradientBuffer = Buffer.alloc(targetWidth * targetHeight * 4);
+        for (let y = 0; y < targetHeight; y++) {
+          const gradientFactor = Math.min(1, y / (targetHeight * 0.6)); // Gradient in bottom 60%
+          const alpha = Math.min(200, Math.floor(gradientFactor * 200)); // Alpha up to 0.8
+          
+          for (let x = 0; x < targetWidth; x++) {
+            const idx = (y * targetWidth + x) * 4;
+            gradientBuffer[idx] = 0;       // R
+            gradientBuffer[idx + 1] = 0;   // G
+            gradientBuffer[idx + 2] = 0;   // B
+            gradientBuffer[idx + 3] = alpha; // Alpha
+          }
+        }
+        
+        // Create gradient overlay
+        const gradientOverlay = await sharp({
+          create: {
+            width: targetWidth,
+            height: targetHeight,
+            channels: 4,
+            background: { r: 0, g: 0, b: 0, alpha: 0 }
+          }
+        }).raw().toBuffer();
+
         // Apply a more dramatic effect to make the strip stand out
         const resized = await sharp(buffer)
           .resize(targetWidth, targetHeight, {
@@ -100,42 +126,17 @@ const processImage = async (imageData, type, density = '1x', options = {}) => {
             hue: 5             // Slight hue shift for warmth
           })
           .gamma(1.2)         // Increased gamma for better contrast
-          // Create a stronger dark gradient overlay at the bottom for better text readability
+          // Apply simple dark overlay at the bottom
           .composite([{
             input: {
               create: {
                 width: targetWidth,
                 height: targetHeight,
                 channels: 4,
-                background: { r: 0, g: 0, b: 0, alpha: 0 }
+                background: { r: 0, g: 0, b: 0, alpha: 0.5 }
               }
             },
-            raw: {
-              width: targetWidth,
-              height: targetHeight,
-              channels: 4
-            },
-            tile: false,
-            gravity: 'south',
-            blend: 'multiply',
-            premultiplied: true,
-            // Create gradient data - darker at bottom for text visibility
-            create: (width, height, channels) => {
-              const data = Buffer.alloc(width * height * channels);
-              for (let y = 0; y < height; y++) {
-                const gradientFactor = Math.min(1, y / (height * 0.6)); // Gradient in bottom 60%
-                const alpha = Math.min(200, Math.floor(gradientFactor * 200)); // Alpha up to 0.8
-                
-                for (let x = 0; x < width; x++) {
-                  const idx = (y * width + x) * channels;
-                  data[idx] = 0;       // R
-                  data[idx + 1] = 0;   // G
-                  data[idx + 2] = 0;   // B
-                  data[idx + 3] = alpha; // Alpha
-                }
-              }
-              return data;
-            }
+            blend: 'multiply'
           }])
           .sharpen({
             sigma: 1.2,      // Sharpen radius
@@ -322,9 +323,13 @@ const createVoucherPass = async ({
           {
             key: 'discount',
             label: '',
-            // Clean value without HTML
             value: formattedDiscount,
-            textAlignment: 'PKTextAlignmentCenter'
+            textAlignment: 'PKTextAlignmentCenter',
+            // Set discount text to be yellow with modest font size increase
+            // Using smaller font size as requested
+            attributedValue: `<font size="+2"><b>${formattedDiscount}</b></font>`,
+            // Set color for the discount text to be bright yellow
+            foregroundColor: COLORS.discountText
           }
         ],
         secondaryFields: [

@@ -209,6 +209,29 @@ const businessPhoneNumberSchema = new mongoose.Schema({
         updatedAt: Date,
         rejectionReason: String
     },
+    // For Toll-Free verification (US/Canada)
+    tollFreeVerification: {
+        status: {
+            type: String,
+            enum: ['not_verified', 'verification_in_progress', 'approved', 'rejected', 'resubmission_required'],
+            default: 'not_verified'
+        },
+        submissionId: String,
+        submittedAt: Date,
+        updatedAt: Date,
+        rejectionReason: String,
+        useCase: {
+            description: String,
+            category: String,
+            optInProcess: String,
+            optInExample: String
+        },
+        businessProfile: {
+            legalEntityName: String,
+            websiteUrl: String,
+            businessType: String
+        }
+    },
     isDefault: {
         type: Boolean,
         default: false
@@ -217,6 +240,11 @@ const businessPhoneNumberSchema = new mongoose.Schema({
         type: String,
         enum: ['active', 'inactive', 'suspended'],
         default: 'active'
+    },
+    numberType: {
+        type: String,
+        enum: ['local', 'toll-free', 'mobile', 'international'],
+        default: 'local'
     },
     capabilities: {
         sms: {
