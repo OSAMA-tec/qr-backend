@@ -9,7 +9,7 @@ const sharp = require('sharp');
 const CERTS_PATH = path.join(process.cwd(), 'certificates');
 
 // Default image URL for Stripe 🖼️
-const DEFAULT_STRIPE_IMAGE = 'https://d2liqplnt17rh6.cloudfront.net/coverImages/saltanatrestaurantcover_25a6baa4-f5a3-450e-9025-d207df31ae59-710.jpeg';
+const DEFAULT_STRIPE_IMAGE = 'https://images.leadconnectorhq.com/image/f_webp/q_80/r_768/u_https://assets.cdn.filesafe.space/jm2CH4gHL7WKdpN4hjlP/media/6762e2b17e621145b0aa5674.jpeg';
 
 // Image size requirements from Apple docs
 const IMAGE_SIZES = {

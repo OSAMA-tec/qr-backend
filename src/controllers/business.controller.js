@@ -2474,6 +2474,94 @@ const getAllCustomers = async (req, res) => {
   }
 };
 
+// Clear all business data 🧹
+const clearBusinessData = async (req, res) => {
+  try {
+    const businessId = req.user.userId;
+
+    // Validate that user is a business
+    const business = await User.findOne({ 
+      _id: businessId, 
+      role: "business" 
+    });
+
+    if (!business) {
+      return res.status(404).json({
+        success: false,
+        message: "Business profile not found! 🔍"
+      });
+    }
+
+    // ============
+    // Delete Campaigns
+    // ============
+    const campaignsDeleted = await Campaign.deleteMany({ businessId });
+    
+    // ============
+    // Delete Coupons 
+    // ============
+    const couponsDeleted = await Coupon.deleteMany({ businessId });
+    
+    // ============
+    // Delete Business Analytics
+    // ============
+    const analyticsDeleted = await BusinessAnalytics.deleteMany({ businessId });
+    
+    // ============
+    // Find users who claimed vouchers from this business
+    // ============
+    await User.updateMany(
+      { "voucherClaims.businessId": businessId },
+      { $pull: { voucherClaims: { businessId } } }
+    );
+    
+    // ============
+    // Find guest users associated with this business 
+    // ============
+    await User.updateMany(
+      { "guestDetails.businessId": businessId },
+      { 
+        $set: { 
+          "guestDetails.businessId": null,
+          "guestDetails.source": null
+        } 
+      }
+    );
+    
+    // ============
+    // Reset business profile data but keep the account
+    // ============
+    await User.updateOne(
+      { _id: businessId },
+      { 
+        $set: {
+          "businessProfile": {
+            businessName: business.businessProfile?.businessName || "",
+            status: "inactive"
+          }
+        }
+      }
+    );
+
+    res.json({
+      success: true,
+      message: "All business data cleared successfully! 🧹",
+      deletedItems: {
+        campaigns: campaignsDeleted.deletedCount,
+        coupons: couponsDeleted.deletedCount,
+        analytics: analyticsDeleted.deletedCount
+      }
+    });
+  } catch (error) {
+    console.error("Clear business data error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Failed to clear business data! 😢",
+      error: process.env.NODE_ENV === "development" ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   getBusinessProfile,
   updateBusinessProfile,
@@ -2490,5 +2578,6 @@ module.exports = {
   getBusinessById,
   updateTermsAndConditions,
   getTermsAndConditions,
-  getAllCustomers
+  getAllCustomers,
+  clearBusinessData
 }; 

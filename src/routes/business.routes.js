@@ -16,7 +16,8 @@ const {
   getBusinessById,
   updateTermsAndConditions,
   getTermsAndConditions,
-  getAllCustomers
+  getAllCustomers,
+  clearBusinessData
 } = require('../controllers/business.controller');
 
 const {
@@ -71,5 +72,8 @@ router.get('/dashboard', getDashboardStats);  // Add dashboard stats route 📊
 router.get('/staff', listStaff);
 router.post('/staff', staffMemberValidation, addStaffMember); //tt
 router.delete('/staff/:id', removeStaffMember); //tt
+
+// Clear business data route 🧹
+router.delete('/clear-data', clearBusinessData);
 
 module.exports = router;       
