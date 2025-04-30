@@ -341,7 +341,7 @@ const getAllCustomers = async (req, res) => {
     const sortOrder = req.query.sortOrder === 'asc' ? 1 : -1;
 
     // Build query 🏗️
-    const query = { role: 'customer' };
+    const query = { role: 'customer', isDeleted: { $ne: true } };
 
     // Add search condition
     if (search) {
@@ -510,7 +510,8 @@ const getCustomerDetails = async (req, res) => {
     // Get customer basic info
     const customer = await User.findOne({ 
       _id: customerId,
-      role: 'customer'
+      role: 'customer',
+      isDeleted: { $ne: true }
     }).select('-password -resetPasswordToken -resetPasswordExpires -verificationToken');
 
     if (!customer) {
@@ -652,6 +653,62 @@ const getCustomerDetails = async (req, res) => {
   }
 };
 
+// Soft delete a customer (Admin only) 🗑️
+const softDeleteCustomer = async (req, res) => {
+  try {
+    // Check if user is admin 👑
+    if (req.user?.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only admins can access this resource! 🚫'
+      });
+    }
+
+    const customerId = req.params.id;
+    
+    // Check if customer exists
+    const customer = await User.findOne({ 
+      _id: customerId,
+      role: 'customer',
+      isDeleted: { $ne: true }
+    });
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Customer not found! 🔍'
+      });
+    }
+
+    // Update the customer to set isDeleted to true
+    await User.findByIdAndUpdate(
+      customerId,
+      { 
+        isDeleted: true,
+        updatedAt: new Date()
+      }
+    );
+
+    // Return success response
+    return res.json({
+      success: true,
+      message: 'Customer has been soft deleted successfully! 🗑️',
+      timestamp: new Date()
+    });
+  } catch (error) {
+    console.error('Soft delete customer error:', error);
+    return res.status(500).json({
+      success: false,
+      timestamp: new Date(),
+      message: 'Failed to soft delete customer! Please try again later 😢',
+      error: process.env.NODE_ENV === 'development' ? {
+        message: error.message,
+        stack: error.stack
+      } : undefined
+    });
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -662,5 +719,6 @@ module.exports = {
   uploadProfilePic,
   deleteProfilePic,
   getAllCustomers,
-  getCustomerDetails
+  getCustomerDetails,
+  softDeleteCustomer
 }; 

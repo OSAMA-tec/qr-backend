@@ -8,7 +8,8 @@ const {
   uploadProfilePic,
   deleteProfilePic,
   getAllCustomers,
-  getCustomerDetails
+  getCustomerDetails,
+  softDeleteCustomer
 } = require('../controllers/user.controller');
 
 const { csrfProtection } = require('../middleware/csrf.middleware');
@@ -46,6 +47,7 @@ const upload = multer({
 // Admin routes 👑
 router.get('/customers', authMiddleware, getAllCustomers);
 router.get('/customers/:id', authMiddleware, getCustomerDetails);
+router.delete('/customers/:id', authMiddleware, softDeleteCustomer);
 
 // Protected routes 🔒
 router.get('/profile', authMiddleware, getProfile);

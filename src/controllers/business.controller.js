@@ -119,6 +119,7 @@ const listCustomers = async (req, res) => {
         { "voucherClaims.businessId": businessObjectId },
         { "guestDetails.businessId": businessObjectId },
       ],
+      isDeleted: { $ne: true }
     };
 
     // ============
@@ -908,14 +909,14 @@ const removeStaffMember = async (req, res) => {
   }
 };
 
-// Get all businesses (Admin only) 🏢
+// Get all businesses (business only) 🏢
 const getAllBusinesses = async (req, res) => {
   try {
-    // Check if user is admin 👑
-    if (req.user?.role !== "admin") {
+    // Check if user is business 👑
+    if (req.user?.role !== "business") {
       return res.status(403).json({
         success: false,
-        message: "Only admins can access this resource! 🚫",
+        message: "Only business can access this resource! 🚫",
       });
     }
 
@@ -1455,7 +1456,8 @@ const getTopCustomers = async (req, res) => {
 
     // Base match stage for all queries 🔍
     const baseMatch = {
-      "voucherClaims.businessId": businessObjectId
+      "voucherClaims.businessId": businessObjectId,
+      isDeleted: { $ne: true }
     };
 
     // Add date range filter if provided 📅
@@ -2143,7 +2145,8 @@ const getAllCustomers = async (req, res) => {
       $or: [
         { "voucherClaims.businessId": businessObjectId },
         { "guestDetails.businessId": businessObjectId }
-      ]
+      ],
+      isDeleted: { $ne: true }
     };
 
     // Add Date Range Filters 📅
